@@ -193,6 +193,12 @@
           "enum": ["vscode", "external"],
           "default": "vscode",
           "description": "Open event links in VSCode Simple Browser or external browser"
+        },
+        "ghTracker.aiLanguage": {
+          "type": "string",
+          "enum": ["vi", "en"],
+          "default": "vi",
+          "description": "Language for AI-generated responses (Vietnamese / English)"
         }
       }
     }
@@ -203,6 +209,7 @@
     "watch": "webpack --watch",
     "package:js": "webpack --mode production --devtool hidden-source-map",
     "package:vsix": "npx vsce package",
+    "package": "npm run package:js && npm run package:vsix",
     "lint": "eslint src"
   },
   "dependencies": {

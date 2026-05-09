@@ -47,4 +47,5 @@ export interface ExtensionConfig {
   aiEnabled: boolean;
   maxEventsShown: number;
   openIn: 'vscode' | 'external';
+  aiLanguage: 'vi' | 'en';
 }

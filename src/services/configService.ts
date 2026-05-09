@@ -8,12 +8,13 @@ export class ConfigService {
   static get(): ExtensionConfig {
     const cfg = vscode.workspace.getConfiguration(ConfigService.SECTION);
     return {
-      hostUrl: cfg.get<string>('hostUrl', 'https://github.com').replace(/\/$/, ''),
-      repositories: cfg.get<string[]>('repositories', []),
-      pollIntervalSeconds: cfg.get<number>('pollIntervalSeconds', 90),
-      aiEnabled: cfg.get<boolean>('aiEnabled', false),
-      maxEventsShown: cfg.get<number>('maxEventsShown', 30),
-      openIn: cfg.get<'vscode' | 'external'>('openIn', 'vscode'),
+      hostUrl:             cfg.get<string>('hostUrl', 'https://github.com').replace(/\/$/, ''),
+      repositories:        cfg.get<string[]>('repositories', []),
+      pollIntervalSeconds: cfg.get<number>('pollIntervalSeconds', 60),
+      aiEnabled:           cfg.get<boolean>('aiEnabled', false),
+      maxEventsShown:      cfg.get<number>('maxEventsShown', 10),
+      openIn:              cfg.get<'vscode'|'external'>('openIn', 'vscode'),
+      aiLanguage:          cfg.get<'vi'|'en'>('aiLanguage', 'vi'),
     };
   }
 

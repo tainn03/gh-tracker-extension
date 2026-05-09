@@ -97,7 +97,7 @@ export class GitHubClient {
     return url;
   }
 
-  /** Fetch pull request details (title, body, commits, changed files summary) */
+  /** Fetch pull request details (title, body, commits, changed files summary, branch info) */
   async getPRDetails(nameWithOwner: string, prNumber: number) {
     const [owner, repo] = nameWithOwner.split('/');
     const { data: pr } = await this.octokit.pulls.get({ owner, repo, pull_number: prNumber });
@@ -107,6 +107,8 @@ export class GitHubClient {
       body: pr.body ?? '',
       state: pr.state,
       merged: pr.merged,
+      headline: pr.head?.ref ?? '',
+      baseBranch: pr.base?.ref ?? '',
       commits: commits.map(c => ({ sha: c.sha.slice(0, 7), message: c.commit.message.split('\n')[0], author: c.commit.author?.name ?? '' })),
       changedFiles: pr.changed_files ?? 0,
       additions: pr.additions ?? 0,

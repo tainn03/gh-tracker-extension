@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ConfigService } from './services/configService';
 import { AuthService } from './services/authService';
+import type { TrackedEvent } from './types';
 import { GitHubClient } from './services/githubClient';
 import { PollService } from './services/pollService';
 import { NotifyService } from './services/notifyService';
@@ -24,6 +25,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let aiService: AIService | undefined;
   let notifyService: NotifyService | undefined;
   let client: GitHubClient | undefined;
+  let searchProvider: SearchTreeProvider | undefined;
+  let summaryProvider: SummaryTreeProvider | undefined;
 
   try {
     store = new EventStore(context.globalStorageUri.fsPath);
@@ -31,18 +34,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     aiService = new AIService();
     notifyService = new NotifyService();
-
-    const cfg = ConfigService.get();
-    repoProvider = new RepoTreeProvider(store, cfg.repositories);
-    eventProvider = new EventTreeProvider(store, cfg.maxEventsShown);
-
-    context.subscriptions.push(
-      vscode.window.registerTreeDataProvider('ghTracker.repos', repoProvider),
-      vscode.window.registerTreeDataProvider('ghTracker.events', eventProvider),
-    );
   } catch (err) {
     console.error('GH Tracker: Failed to initialize storage/services:', err);
   }
+
+  // Create ALL tree providers unconditionally
+  const cfg = ConfigService.get();
+  repoProvider = new RepoTreeProvider(store!, cfg.repositories);
+  eventProvider = new EventTreeProvider(store!, cfg.maxEventsShown);
+  searchProvider = new SearchTreeProvider();
+  summaryProvider = new SummaryTreeProvider();
+
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('ghTracker.repos', repoProvider),
+    vscode.window.registerTreeDataProvider('ghTracker.events', eventProvider),
+    vscode.window.registerTreeDataProvider('ghTracker.search', searchProvider),
+    vscode.window.registerTreeDataProvider('ghTracker.summary', summaryProvider),
+  );
 
   // ── 2. GitHubClient factory (re-created when settings change) ────────────────
   async function initClient(): Promise<GitHubClient | undefined> {
@@ -186,20 +194,133 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await aiService.investigateFailure(item.event, client);
     }),
 
-    vscode.commands.registerCommand('ghTracker.aiSearch', () => {
-      if (!store || !aiService) {
+    vscode.commands.registerCommand('ghTracker.aiSearch', async () => {
+      if (!store || !aiService || !searchProvider) {
         vscode.window.showErrorMessage('GH Tracker: Storage or AI unavailable');
         return;
       }
-      SearchPanel.show(store, aiService);
+      // Show the Search view first so results appear
+      await vscode.commands.executeCommand('workbench.view.extension.ghTracker');
+
+      const query = await vscode.window.showInputBox({
+        prompt: 'Search events (natural language query)',
+        placeHolder: 'e.g. PR reviews, pipeline failures, releases needing attention',
+        ignoreFocusOut: true,
+      });
+      if (!query) return;
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GH Tracker: Searching events...',
+      }, async () => {
+        const allEvents = store!.getAllEvents();
+        const results = await aiService!.searchEvents(query, allEvents);
+        searchProvider!.setResults(results, query);
+      });
     }),
 
-    vscode.commands.registerCommand('ghTracker.aiSummary', () => {
-      if (!store || !aiService) {
+    vscode.commands.registerCommand('ghTracker.aiSummary', async () => {
+      if (!store || !aiService || !summaryProvider) {
         vscode.window.showErrorMessage('GH Tracker: Storage or AI unavailable');
         return;
       }
-      SummaryPanel.show(context, store, aiService);
+      if (!client) {
+        vscode.window.showErrorMessage('GH Tracker: GitHub client not available. Open Settings to configure.');
+        return;
+      }
+
+      // Show the Summary view first
+      await vscode.commands.executeCommand('workbench.view.extension.ghTracker');
+
+      // Prompt for custom instruction (pre-filled with cached value)
+      const cachedPrompt = context.workspaceState.get<string>('summaryPrompt', '');
+      const userPrompt = await vscode.window.showInputBox({
+        prompt: 'Nh\u1EADp y\u00EAu c\u1EA7u t\u00F9y ch\u1EC9nh cho AI (\u0111\u1EC3 tr\u1ED1ng n\u1EBFu kh\u00F4ng c\u00F3)',
+        placeHolder: 'V\u00ED d\u1EE5: T\u1EADp trung v\u00E0o pipeline failures v\u00E0 PR c\u1EA7n review',
+        value: cachedPrompt,
+        ignoreFocusOut: true,
+      });
+      if (userPrompt === undefined) return; // Escape = cancel
+      await context.workspaceState.update('summaryPrompt', userPrompt);
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'GH Tracker: \u0110ang t\u1EA1o b\u00E1o c\u00E1o h\u00F4m nay...',
+      }, async (progress) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString();
+        const allEvents = store!.getAllEvents();
+        const todayEvents = allEvents.filter(e => e.createdAt >= todayStr);
+
+        if (todayEvents.length === 0) {
+          summaryProvider!.setData([]);
+          return;
+        }
+
+        // Group by repo: separate PR events from non-PR events
+        const byRepo = new Map<string, { prEvents: TrackedEvent[]; otherEvents: TrackedEvent[] }>();
+        for (const e of todayEvents) {
+          const entry = byRepo.get(e.repo) ?? { prEvents: [], otherEvents: [] };
+          if (e.type.startsWith('pr_') || e.url.includes('/pull/')) {
+            entry.prEvents.push(e);
+          } else {
+            entry.otherEvents.push(e);
+          }
+          byRepo.set(e.repo, entry);
+        }
+
+        // Process each repo: generate per-PR AI summaries with full context
+        const repos: import('./providers/summaryTreeProvider').RepoSummaryData[] = [];
+
+        for (const [repo, group] of byRepo) {
+          const prSummaries: import('./providers/summaryTreeProvider').PRSummaryData[] = [];
+          const seenPRs = new Set<number>();
+          // Map: branch → PR number (for enriching push events)
+          const branchToPR = new Map<string, number>();
+
+          for (const prEvent of group.prEvents) {
+            const prMatch = prEvent.url.match(/\/pull\/(\d+)/);
+            if (!prMatch) continue;
+            const prNum = parseInt(prMatch[1], 10);
+            if (seenPRs.has(prNum)) continue;
+            seenPRs.add(prNum);
+
+            progress.report({ message: 'Ph\u00E2n t\u00EDch PR #' + prNum + ' (' + repo + ')...' });
+
+            const result = await aiService!.generatePRSummary(prEvent, client!, userPrompt);
+
+            // Map the PR's head branch for push event enrichment
+            if (result.headBranch) {
+              branchToPR.set(result.headBranch, prNum);
+            }
+
+            // Derive a clean PR title from the event title
+            const cleanTitle = prEvent.title.replace(/^.+\b(PR\s*#\d+\s*:\s*)/i, '').trim() || prEvent.title;
+
+            prSummaries.push({
+              prNumber: prNum,
+              prTitle: cleanTitle,
+              summary: result.summary,
+            });
+          }
+
+          // Enrich push events: match branch to known PR number
+          const pushPRMap = new Map<string, number>();
+          for (const ev of group.otherEvents) {
+            if (ev.type !== 'push') continue;
+            const payload = ev.payload as any;
+            const branch = (payload?.ref as string)?.replace('refs/heads/', '') ?? '';
+            if (branch && branchToPR.has(branch)) {
+              pushPRMap.set(ev.id, branchToPR.get(branch)!);
+            }
+          }
+
+          repos.push({ repo, prSummaries, otherEvents: group.otherEvents, pushPRMap });
+        }
+
+        summaryProvider!.setData(repos);
+      });
     }),
 
     // Restart polling when settings change
