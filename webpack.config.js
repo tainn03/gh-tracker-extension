@@ -13,8 +13,7 @@ module.exports = {
   },
 
   externals: {
-    vscode:           'commonjs vscode',
-    'better-sqlite3': 'commonjs better-sqlite3',
+    vscode: 'commonjs vscode',
   },
 
   resolve: { extensions: ['.ts', '.js'] },

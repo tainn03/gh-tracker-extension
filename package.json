@@ -8,6 +8,7 @@
   "description": "Real-time event tracking for GitHub / GHE repositories",
   "version": "0.1.0",
   "publisher": "ngtai",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -67,6 +68,14 @@
       {
         "command": "ghTracker.aiReview",
         "title": "GH Tracker: AI Review PR"
+      },
+      {
+        "command": "ghTracker.showEvents",
+        "title": "GH Tracker: Show Events"
+      },
+      {
+        "command": "ghTracker.openEvent",
+        "title": "GH Tracker: Open Event"
       }
     ],
     "menus": {
@@ -148,11 +157,10 @@
   },
   "dependencies": {
     "@octokit/plugin-throttling": "^11.0.3",
-    "@octokit/rest": "^22.0.1",
-    "better-sqlite3": "^12.9.0"
+    "@octokit/rest": "^22.0.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.2",
     "@types/vscode": "^1.90.0",
     "ts-loader": "^9.5.7",
     "webpack": "^5.98.0",
