@@ -6,7 +6,7 @@
   },
   "displayName": "GitHub Enterprise Tracker",
   "description": "Real-time event tracking for GitHub / GHE repositories",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "ngtai",
   "icon": "resources/icon.png",
   "engines": {
@@ -55,7 +55,8 @@
       },
       {
         "command": "ghTracker.addRepo",
-        "title": "GH Tracker: Add Repository"
+        "title": "GH Tracker: Add Repository",
+        "icon": "$(plus)"
       },
       {
         "command": "ghTracker.removeRepo",
@@ -76,6 +77,11 @@
       {
         "command": "ghTracker.openEvent",
         "title": "GH Tracker: Open Event"
+      },
+      {
+        "command": "ghTracker.openSettings",
+        "title": "GH Tracker: Open Settings",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -87,6 +93,11 @@
         },
         {
           "command": "ghTracker.addRepo",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.openSettings",
           "when": "view == ghTracker.repos",
           "group": "navigation"
         }

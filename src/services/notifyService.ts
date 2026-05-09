@@ -9,7 +9,11 @@ const IMPORTANT_TYPES = new Set([
 
 export class NotifyService {
   notify(events: TrackedEvent[], config: ExtensionConfig): void {
-    for (const event of events) {
+    // Sort oldest-first so the newest toast notification appears last
+    const sorted = [...events].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    for (const event of sorted) {
       if (!this.shouldNotify(event, config)) { continue; }
 
       const isFailure = event.type === 'workflow_failed';

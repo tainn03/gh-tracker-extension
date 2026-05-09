@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
-import { ConfigService }    from './services/configService';
-import { AuthService }      from './services/authService';
-import { GitHubClient }     from './services/githubClient';
-import { PollService }      from './services/pollService';
-import { NotifyService }    from './services/notifyService';
-import { AIService }        from './services/aiService';
-import { EventStore }       from './storage/eventStore';
+import { ConfigService } from './services/configService';
+import { AuthService } from './services/authService';
+import { GitHubClient } from './services/githubClient';
+import { PollService } from './services/pollService';
+import { NotifyService } from './services/notifyService';
+import { AIService } from './services/aiService';
+import { EventStore } from './storage/eventStore';
 import { RepoTreeProvider } from './providers/repoTreeProvider';
 import { EventTreeProvider } from './providers/eventTreeProvider';
-import { SetupPanel }       from './webviews/setupPanel';
+import { SetupPanel } from './webviews/setupPanel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   console.log('GH Tracker: activating');
@@ -27,24 +27,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     store = new EventStore(context.globalStorageUri.fsPath);
     context.subscriptions.push({ dispose: () => store!.dispose() });
 
-    aiService     = new AIService();
+    aiService = new AIService();
     notifyService = new NotifyService();
 
-    const cfg           = ConfigService.get();
-    repoProvider  = new RepoTreeProvider(store, cfg.repositories);
+    const cfg = ConfigService.get();
+    repoProvider = new RepoTreeProvider(store, cfg.repositories);
     eventProvider = new EventTreeProvider(store, cfg.maxEventsShown);
 
     context.subscriptions.push(
-      vscode.window.registerTreeDataProvider('ghTracker.repos',  repoProvider),
+      vscode.window.registerTreeDataProvider('ghTracker.repos', repoProvider),
       vscode.window.registerTreeDataProvider('ghTracker.events', eventProvider),
     );
   } catch (err) {
     console.error('GH Tracker: Failed to initialize storage/services:', err);
   }
 
-  // ── 2. GitHubClient factory (re-created when settings change) ────────────────
+  // ── 2. Status bar — notification level badge ─────────────────────────────────
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  statusBarItem.command = 'ghTracker.openSettings';
+  statusBarItem.tooltip = 'GH Tracker — Click to change notification level';
+  context.subscriptions.push(statusBarItem);
+
+  function updateNotiBadge(): void {
+    const cfg = ConfigService.get();
+    const labels: Record<string, string> = {
+      'all': 'ALL',
+      'important': 'IMPORTANT',
+      'failures-only': 'FAILURES',
+    };
+    statusBarItem.text = `$(bell) ${labels[cfg.notificationLevel] ?? cfg.notificationLevel}`;
+    statusBarItem.show();
+  }
+  updateNotiBadge();
+
+  // ── 3. GitHubClient factory (re-created when settings change) ────────────────
   async function initClient(): Promise<GitHubClient | undefined> {
-    const c     = ConfigService.get();
+    const c = ConfigService.get();
     const token = await AuthService.getToken(context, c.hostUrl);
     if (!token) {
       vscode.window.showErrorMessage('GH Tracker: Authentication failed. Run "GH Tracker: Open Setup".');
@@ -53,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return new GitHubClient(token, c.hostUrl);
   }
 
-  // ── 3. Poll service ──────────────────────────────────────────────────────────
+  // ── 4. Poll service ──────────────────────────────────────────────────────────
   let pollService: PollService | undefined;
 
   async function startPolling(): Promise<void> {
@@ -82,9 +100,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // AI scoring: filter notifications by urgency score
       const toNotify = currentConfig.aiEnabled
         ? (await Promise.all(events.map(async e => ({
-            event: e,
-            score: await aiService!.scoreEventUrgency(e, 'current-user')
-          })))).filter(x => x.score >= 3).map(x => x.event)
+          event: e,
+          score: await aiService!.scoreEventUrgency(e, 'current-user')
+        })))).filter(x => x.score >= 3).map(x => x.event)
         : events;
 
       notifyService!.notify(toNotify, currentConfig);
@@ -104,7 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await startPolling();
   }
 
-  // ── 4. Register commands FIRST (before any fallible init) ────────────────────
+  // ── 5. Register commands FIRST (before any fallible init) ────────────────────
   //     This ensures commands survive partial activation failures.
   context.subscriptions.push(
 
@@ -168,8 +186,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       eventProvider.refresh();
     }),
 
-    // Restart polling when settings change (e.g. user edits settings.json)
-    ConfigService.onChange(restart)
+    vscode.commands.registerCommand('ghTracker.openSettings', () => {
+      vscode.commands.executeCommand('workbench.action.openSettings', '@gh-tracker');
+    }),
+
+    // Restart polling + update badge when settings change
+    ConfigService.onChange(() => {
+      updateNotiBadge();
+      restart();
+    })
   );
 
   // ── 5. Kick off polling (silently skip if storage is unavailable) ────────────
