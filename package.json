@@ -1,0 +1,160 @@
+{
+  "name": "gh-tracker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ngtai/gh-tracker.git"
+  },
+  "displayName": "GitHub Enterprise Tracker",
+  "description": "Real-time event tracking for GitHub / GHE repositories",
+  "version": "0.1.0",
+  "publisher": "ngtai",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ghTracker",
+          "title": "GH Tracker",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ghTracker": [
+        {
+          "id": "ghTracker.repos",
+          "name": "Repositories",
+          "icon": "$(repo)"
+        },
+        {
+          "id": "ghTracker.events",
+          "name": "Events",
+          "icon": "$(bell)"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ghTracker.setup",
+        "title": "GH Tracker: Open Setup"
+      },
+      {
+        "command": "ghTracker.refresh",
+        "title": "GH Tracker: Refresh Now",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghTracker.addRepo",
+        "title": "GH Tracker: Add Repository"
+      },
+      {
+        "command": "ghTracker.removeRepo",
+        "title": "GH Tracker: Remove Repository"
+      },
+      {
+        "command": "ghTracker.markRead",
+        "title": "GH Tracker: Mark All Read"
+      },
+      {
+        "command": "ghTracker.aiReview",
+        "title": "GH Tracker: AI Review PR"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ghTracker.refresh",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.addRepo",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ghTracker.removeRepo",
+          "when": "view == ghTracker.repos && viewItem == repo"
+        },
+        {
+          "command": "ghTracker.aiReview",
+          "when": "view == ghTracker.events && viewItem == event_pr"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GitHub Enterprise Tracker",
+      "properties": {
+        "ghTracker.hostUrl": {
+          "type": "string",
+          "default": "https://github.com",
+          "description": "GitHub or GitHub Enterprise host URL (e.g. https://ghe.corp.co.jp)"
+        },
+        "ghTracker.repositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of repositories to track in org/repo format"
+        },
+        "ghTracker.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 30,
+          "description": "How often to poll for new events (seconds)"
+        },
+        "ghTracker.aiEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Copilot AI features (requires GitHub Copilot)"
+        },
+        "ghTracker.notificationLevel": {
+          "type": "string",
+          "enum": [
+            "all",
+            "important",
+            "failures-only"
+          ],
+          "default": "important",
+          "description": "Which events trigger a toast notification"
+        },
+        "ghTracker.maxEventsShown": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum events shown per repository"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package:js",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package:js": "webpack --mode production --devtool hidden-source-map",
+    "package:vsix": "npx vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "@octokit/plugin-throttling": "^11.0.3",
+    "@octokit/rest": "^22.0.1",
+    "better-sqlite3": "^12.9.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/vscode": "^1.90.0",
+    "ts-loader": "^9.5.7",
+    "webpack-cli": "^7.0.2"
+  }
+}
