@@ -83,8 +83,13 @@ export class EventStore {
     this.scheduleFlush();
   }
 
+  /** Get all stored events (for search/analysis). */
+  getAllEvents(): TrackedEvent[] {
+    return this.events;
+  }
+
   /** Get the most recent N events for a repo. */
-  getEventsForRepo(repo: string, limit = 10): TrackedEvent[] {
+  getEventsForRepo(repo: string, limit = 30): TrackedEvent[] {
     const results: TrackedEvent[] = [];
     for (const e of this.events) {
       if (e.repo === repo) {

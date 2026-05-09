@@ -6,9 +6,8 @@
   },
   "displayName": "GitHub Enterprise Tracker",
   "description": "Real-time event tracking for GitHub / GHE repositories",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "ngtai",
-  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -40,6 +39,14 @@
           "id": "ghTracker.events",
           "name": "Events",
           "icon": "$(bell)"
+        },
+        {
+          "id": "ghTracker.search",
+          "name": "Search"
+        },
+        {
+          "id": "ghTracker.summary",
+          "name": "Today Summary"
         }
       ]
     },
@@ -82,6 +89,24 @@
         "command": "ghTracker.openSettings",
         "title": "GH Tracker: Open Settings",
         "icon": "$(gear)"
+      },
+      {
+        "command": "ghTracker.aiSummarize",
+        "title": "GH Tracker: AI Summarize Event"
+      },
+      {
+        "command": "ghTracker.aiInvestigate",
+        "title": "GH Tracker: AI Investigate Failure"
+      },
+      {
+        "command": "ghTracker.aiSearch",
+        "title": "GH Tracker: AI Event Search",
+        "icon": "$(search)"
+      },
+      {
+        "command": "ghTracker.aiSummary",
+        "title": "GH Tracker: Today Summary",
+        "icon": "$(list-tree)"
       }
     ],
     "menus": {
@@ -100,6 +125,16 @@
           "command": "ghTracker.openSettings",
           "when": "view == ghTracker.repos",
           "group": "navigation"
+        },
+        {
+          "command": "ghTracker.aiSearch",
+          "when": "view == ghTracker.search",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.aiSummary",
+          "when": "view == ghTracker.summary",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -110,6 +145,14 @@
         {
           "command": "ghTracker.aiReview",
           "when": "view == ghTracker.events && viewItem == event_pr"
+        },
+        {
+          "command": "ghTracker.aiSummarize",
+          "when": "view == ghTracker.events && (viewItem == event || viewItem == event_pr || viewItem == event_failure)"
+        },
+        {
+          "command": "ghTracker.aiInvestigate",
+          "when": "view == ghTracker.events && viewItem == event_failure"
         }
       ]
     },
@@ -140,20 +183,16 @@
           "default": false,
           "description": "Enable Copilot AI features (requires GitHub Copilot)"
         },
-        "ghTracker.notificationLevel": {
-          "type": "string",
-          "enum": [
-            "all",
-            "important",
-            "failures-only"
-          ],
-          "default": "important",
-          "description": "Which events trigger a toast notification"
-        },
         "ghTracker.maxEventsShown": {
           "type": "number",
           "default": 10,
           "description": "Maximum events shown per repository"
+        },
+        "ghTracker.openIn": {
+          "type": "string",
+          "enum": ["vscode", "external"],
+          "default": "vscode",
+          "description": "Open event links in VSCode Simple Browser or external browser"
         }
       }
     }

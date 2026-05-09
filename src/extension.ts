@@ -8,6 +8,8 @@ import { AIService } from './services/aiService';
 import { EventStore } from './storage/eventStore';
 import { RepoTreeProvider } from './providers/repoTreeProvider';
 import { EventTreeProvider } from './providers/eventTreeProvider';
+import { SearchTreeProvider } from './providers/searchTreeProvider';
+import { SummaryTreeProvider } from './providers/summaryTreeProvider';
 import { SetupPanel } from './webviews/setupPanel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -42,25 +44,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.error('GH Tracker: Failed to initialize storage/services:', err);
   }
 
-  // ── 2. Status bar — notification level badge ─────────────────────────────────
-  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
-  statusBarItem.command = 'ghTracker.openSettings';
-  statusBarItem.tooltip = 'GH Tracker — Click to change notification level';
-  context.subscriptions.push(statusBarItem);
-
-  function updateNotiBadge(): void {
-    const cfg = ConfigService.get();
-    const labels: Record<string, string> = {
-      'all': 'ALL',
-      'important': 'IMPORTANT',
-      'failures-only': 'FAILURES',
-    };
-    statusBarItem.text = `$(bell) ${labels[cfg.notificationLevel] ?? cfg.notificationLevel}`;
-    statusBarItem.show();
-  }
-  updateNotiBadge();
-
-  // ── 3. GitHubClient factory (re-created when settings change) ────────────────
+  // ── 2. GitHubClient factory (re-created when settings change) ────────────────
   async function initClient(): Promise<GitHubClient | undefined> {
     const c = ConfigService.get();
     const token = await AuthService.getToken(context, c.hostUrl);
@@ -75,7 +59,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let pollService: PollService | undefined;
 
   async function startPolling(): Promise<void> {
-    if (!store || !aiService || !notifyService || !repoProvider || !eventProvider) {
+    if (!store || !notifyService || !repoProvider || !eventProvider) {
       // Storage unavailable — can't poll
       return;
     }
@@ -95,17 +79,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // React to new events: notify + refresh tree
     const sub = pollService.onNewEvents(async (events) => {
-      const currentConfig = ConfigService.get();
-
-      // AI scoring: filter notifications by urgency score
-      const toNotify = currentConfig.aiEnabled
-        ? (await Promise.all(events.map(async e => ({
-          event: e,
-          score: await aiService!.scoreEventUrgency(e, 'current-user')
-        })))).filter(x => x.score >= 3).map(x => x.event)
-        : events;
-
-      notifyService!.notify(toNotify, currentConfig);
+      notifyService!.notify(events);
       repoProvider!.refresh();
       eventProvider!.refresh();
     });
@@ -165,9 +139,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('ghTracker.openEvent', (event) => {
-      if (!store || !repoProvider) { return; }
+      if (!store || !repoProvider || !event?.url) { return; }
+      const uri = vscode.Uri.parse(event.url);
+      if (!uri.scheme.startsWith('http')) {
+        vscode.window.showWarningMessage(`GH Tracker: Invalid event URL — "${event.url}"`);
+        return;
+      }
       store.markEventRead(event.id);
-      vscode.env.openExternal(vscode.Uri.parse(event.url));
+      const cfg = ConfigService.get();
+      if (cfg.openIn === 'external') {
+        vscode.env.openExternal(uri);
+      } else {
+        vscode.commands.executeCommand('simpleBrowser.show', event.url);
+      }
       repoProvider.refresh();
     }),
 
@@ -176,7 +160,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const prMatch = item.event.url.match(/\/pull\/(\d+)/);
       if (!prMatch) { return; }
       const files = await client.getPRFiles(item.event.repo, parseInt(prMatch[1], 10));
-      await aiService.reviewPR(item.event, files);
+      await aiService.reviewPR(item.event, files, client);
     }),
 
     vscode.commands.registerCommand('ghTracker.markRead', (item) => {
@@ -190,9 +174,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.executeCommand('workbench.action.openSettings', '@gh-tracker');
     }),
 
-    // Restart polling + update badge when settings change
+    // ── New AI commands ───────────────────────────────────────────────
+
+    vscode.commands.registerCommand('ghTracker.aiSummarize', async (item) => {
+      if (!item?.event || !client || !aiService) { return; }
+      await aiService.summarizeEvent(item.event, client);
+    }),
+
+    vscode.commands.registerCommand('ghTracker.aiInvestigate', async (item) => {
+      if (!item?.event || !client || !aiService) { return; }
+      await aiService.investigateFailure(item.event, client);
+    }),
+
+    vscode.commands.registerCommand('ghTracker.aiSearch', () => {
+      if (!store || !aiService) {
+        vscode.window.showErrorMessage('GH Tracker: Storage or AI unavailable');
+        return;
+      }
+      SearchPanel.show(store, aiService);
+    }),
+
+    vscode.commands.registerCommand('ghTracker.aiSummary', () => {
+      if (!store || !aiService) {
+        vscode.window.showErrorMessage('GH Tracker: Storage or AI unavailable');
+        return;
+      }
+      SummaryPanel.show(context, store, aiService);
+    }),
+
+    // Restart polling when settings change
     ConfigService.onChange(() => {
-      updateNotiBadge();
       restart();
     })
   );

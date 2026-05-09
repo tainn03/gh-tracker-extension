@@ -34,7 +34,7 @@ export class SetupPanel {
     // Listen for messages sent from the webview JavaScript
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.command === 'save') {
-        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, notificationLevel } = msg.data;
+        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds } = msg.data;
 
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
@@ -44,7 +44,6 @@ export class SetupPanel {
           c.update('repositories',        repositories,        globalTarget),
           c.update('aiEnabled',           aiEnabled,           globalTarget),
           c.update('pollIntervalSeconds', pollIntervalSeconds, globalTarget),
-          c.update('notificationLevel',   notificationLevel,   globalTarget),
         ]);
 
         vscode.window.showInformationMessage('GH Tracker: Settings saved!');
@@ -121,12 +120,7 @@ export class SetupPanel {
   <label for="pollInterval">Poll interval (seconds)</label>
   <input id="pollInterval" type="number" min="30" value="${cfg.pollIntervalSeconds}" />
 
-  <label for="notifLevel">Notification level</label>
-  <select id="notifLevel">
-    <option value="all"           ${cfg.notificationLevel === 'all'           ? 'selected' : ''}>All events</option>
-    <option value="important"     ${cfg.notificationLevel === 'important'     ? 'selected' : ''}>Important only (PRs, failures)</option>
-    <option value="failures-only" ${cfg.notificationLevel === 'failures-only' ? 'selected' : ''}>Failures only</option>
-  </select>
+
 
   <div class="toggle-row">
     <input type="checkbox" id="aiEnabled" ${cfg.aiEnabled ? 'checked' : ''} style="width:auto">
@@ -145,7 +139,6 @@ export class SetupPanel {
           hostUrl:             document.getElementById('hostUrl').value.trim(),
           repositories:        document.getElementById('repos').value.split('\n').map(s => s.trim()).filter(Boolean),
           pollIntervalSeconds: parseInt(document.getElementById('pollInterval').value, 10),
-          notificationLevel:   document.getElementById('notifLevel').value,
           aiEnabled:           document.getElementById('aiEnabled').checked,
         }
       });

@@ -28,6 +28,10 @@ export type EventType =
   | 'branch_created'
   | 'branch_deleted'
   | 'release_published'
+  | 'issue_opened'
+  | 'issue_closed'
+  | 'fork'
+  | 'watch'
   | 'unknown';
 
 export interface RepoConfig {
@@ -41,6 +45,6 @@ export interface ExtensionConfig {
   repositories: string[];
   pollIntervalSeconds: number;
   aiEnabled: boolean;
-  notificationLevel: 'all' | 'important' | 'failures-only';
   maxEventsShown: number;
+  openIn: 'vscode' | 'external';
 }

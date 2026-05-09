@@ -97,6 +97,74 @@ export class GitHubClient {
     return url;
   }
 
+  /** Fetch pull request details (title, body, commits, changed files summary) */
+  async getPRDetails(nameWithOwner: string, prNumber: number) {
+    const [owner, repo] = nameWithOwner.split('/');
+    const { data: pr } = await this.octokit.pulls.get({ owner, repo, pull_number: prNumber });
+    const { data: commits } = await this.octokit.pulls.listCommits({ owner, repo, pull_number: prNumber, per_page: 20 });
+    return {
+      title: pr.title,
+      body: pr.body ?? '',
+      state: pr.state,
+      merged: pr.merged,
+      commits: commits.map(c => ({ sha: c.sha.slice(0, 7), message: c.commit.message.split('\n')[0], author: c.commit.author?.name ?? '' })),
+      changedFiles: pr.changed_files ?? 0,
+      additions: pr.additions ?? 0,
+      deletions: pr.deletions ?? 0,
+    };
+  }
+
+  /** Fetch text log for a workflow run (fetches failed job logs) */
+  async getWorkflowRunLogText(nameWithOwner: string, runId: number): Promise<string> {
+    const [owner, repo] = nameWithOwner.split('/');
+    try {
+      // List jobs for this run
+      const { data: jobsData } = await this.octokit.actions.listJobsForWorkflowRun({
+        owner, repo, run_id: runId, filter: 'latest',
+      });
+      // Get logs for failed jobs
+      const failedJobs = jobsData.jobs.filter(j => j.conclusion === 'failure');
+      if (failedJobs.length === 0) return 'No failed jobs found.';
+
+      let logText = '';
+      for (const job of failedJobs.slice(0, 3)) { // max 3 failed jobs
+        logText += `\n--- Job: ${job.name} ---\n`;
+        try {
+          const logResponse = await this.octokit.request('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', {
+            owner, repo, job_id: job.id,
+            headers: { Accept: 'application/vnd.github+json' },
+          });
+          // The log response is typically raw text
+          const raw = typeof logResponse.data === 'string' ? logResponse.data : JSON.stringify(logResponse.data);
+          // Take last 100 lines
+          const lines = raw.split('\n');
+          logText += lines.slice(-100).join('\n');
+        } catch {
+          logText += '(logs unavailable)\n';
+        }
+      }
+      return logText.trim();
+    } catch (err: any) {
+      return `Failed to fetch logs: ${err.message}`;
+    }
+  }
+
+  /** Fetch commit details for a push (get commit messages and authors) */
+  async getPushCommitDetails(nameWithOwner: string, ref: string): Promise<Array<{ sha: string; message: string; author: string }>> {
+    const [owner, repo] = nameWithOwner.split('/');
+    const branch = ref.replace('refs/heads/', '');
+    try {
+      const { data } = await this.octokit.repos.listCommits({ owner, repo, sha: branch, per_page: 10 });
+      return data.map(c => ({
+        sha: c.sha.slice(0, 7),
+        message: c.commit.message.split('\n')[0],
+        author: c.commit.author?.name ?? '',
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   /** Quick connectivity check — useful in the setup UI to validate the host URL + token */
   async validateConnection(): Promise<{ login: string; name: string }> {
     const { data } = await this.octokit.users.getAuthenticated();
