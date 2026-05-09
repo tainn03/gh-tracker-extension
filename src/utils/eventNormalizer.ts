@@ -51,11 +51,14 @@ export function normalizeEvent(raw: any, repo: string): TrackedEvent {
     }
 
     case 'IssueCommentEvent': {
-      // IssueCommentEvent fires for comments on both issues AND pull requests
       const issue = raw.payload.issue;
       const comment = raw.payload.comment;
+      // IssueCommentEvent fires for plain issues AND pull requests.
+      // Detect PR by checking for pull_request in the issue payload.
+      const isPR = !!issue?.pull_request;
       return {
-        ...base, type: 'pr_comment',
+        ...base,
+        type: isPR ? 'pr_comment' : 'issue_comment',
         title: `${base.actor} commented on #${issue?.number}: ${issue?.title ?? ''}`,
         url:   comment?.html_url ?? issue?.html_url ?? '',
       };
@@ -74,11 +77,23 @@ export function normalizeEvent(raw: any, repo: string): TrackedEvent {
 
     case 'WorkflowRunEvent': {
       const run = raw.payload.workflow_run;
-      const failed = run?.conclusion === 'failure';
+      const action = raw.payload.action; // 'requested', 'in_progress', 'completed'
+      const conclusion = run?.conclusion;
+
+      // Only map 'completed' runs to passed/failed; skip non-terminal states
+      if (action !== 'completed' || !conclusion) {
+        return {
+          ...base, type: 'unknown',
+          title: `${base.actor} triggered ${run?.name ?? 'Pipeline'} (${action ?? 'unknown'}) on ${run?.head_branch ?? 'unknown'}`,
+          url:   run?.html_url ?? '',
+        };
+      }
+
+      const failed = conclusion === 'failure';
       return {
         ...base,
         type:  failed ? 'workflow_failed' : 'workflow_passed',
-        title: `${failed ? '❌' : '✅'} ${run?.name ?? 'Pipeline'} ${run?.conclusion} on ${run?.head_branch}`,
+        title: `${failed ? '❌' : '✅'} ${run?.name ?? 'Pipeline'} ${conclusion} on ${run?.head_branch}`,
         url:   run?.html_url ?? '',
       };
     }

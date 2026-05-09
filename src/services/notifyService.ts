@@ -23,6 +23,8 @@ export class NotifyService {
         if (choice === 'Open') {
           vscode.env.openExternal(vscode.Uri.parse(event.url));
         }
+      }, () => {
+        // User dismissed — no action needed
       });
     }
   }

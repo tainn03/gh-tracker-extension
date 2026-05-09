@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { ExtensionConfig } from '../types';
 
 export class ConfigService {
-  private static readonly SECTION = 'ghTracker';
+  static readonly SECTION = 'ghTracker';
 
   /** Read the current config snapshot from VSCode settings */
   static get(): ExtensionConfig {

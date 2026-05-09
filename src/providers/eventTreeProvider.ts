@@ -34,6 +34,7 @@ const EVENT_ICONS: Record<EventType, string> = {
   pr_merged:        'git-merge',
   pr_review:        'eye',
   pr_comment:       'comment',
+  issue_comment:    'comment-discussion',
   pr_ready:         'pass',
   push:             'arrow-up',
   workflow_failed:  'error',

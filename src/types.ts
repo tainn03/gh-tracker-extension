@@ -18,6 +18,7 @@ export type EventType =
   | 'pr_merged'
   | 'pr_review'
   | 'pr_comment'
+  | 'issue_comment'
   | 'pr_ready'
   | 'push'
   | 'workflow_failed'

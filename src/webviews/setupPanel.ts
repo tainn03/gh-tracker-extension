@@ -38,7 +38,7 @@ export class SetupPanel {
 
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
-        const c = vscode.workspace.getConfiguration('ghTracker');
+        const c = vscode.workspace.getConfiguration(ConfigService.SECTION);
         await Promise.all([
           c.update('hostUrl',             hostUrl,             globalTarget),
           c.update('repositories',        repositories,        globalTarget),
