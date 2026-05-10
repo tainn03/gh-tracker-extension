@@ -42,6 +42,14 @@ export interface RepoConfig {
   hasFailure: boolean;    // true if latest workflow_failed event is unread
 }
 
+/** Filter configuration applied to both notification toasts and event list display */
+export interface EventFilter {
+  /** Event types to show/notify. Empty = allow all. */
+  eventTypes: string[];
+  /** Actors (usernames) to show/notify. Empty = allow all. */
+  actors: string[];
+}
+
 export interface ExtensionConfig {
   hostUrl: string;
   repositories: string[];
@@ -49,7 +57,9 @@ export interface ExtensionConfig {
   aiEnabled: boolean;
   maxEventsShown: number;
   openIn: 'vscode' | 'external';
-  notifyFilterTypes: string[];  // event types allowed to notify; empty = notify all
+  /** @deprecated Use eventFilter.eventTypes instead */
+  notifyFilterTypes: string[];
+  eventFilter: EventFilter;
 }
 
 /** Structured enriched data stored in TrackedEvent.rawData (JSON-serialized). */

@@ -1,5 +1,30 @@
 import type { TrackedEvent, EventType } from '../types';
 
+/**
+ * Convert a single workflow run object from the Actions API
+ * (GET /repos/{owner}/{repo}/actions/runs) into a TrackedEvent.
+ *
+ * The Actions API returns different fields than the webhook-based Events API,
+ * so this is a separate normaliser.  IDs are prefixed with "wr_" to avoid
+ * collision with Events API event IDs.
+ */
+export function normalizeWorkflowRun(run: any, repo: string): TrackedEvent {
+  const id = 'wr_' + run.id;
+  const conclusion = run.conclusion ?? '';
+  const failed = conclusion === 'failure';
+  return {
+    id,
+    repo,
+    type: failed ? 'workflow_failed' : 'workflow_passed',
+    actor: run.actor?.login ?? run.triggering_actor?.login ?? 'unknown',
+    title: `${run.name ?? 'Pipeline'} ${conclusion} on ${run.head_branch ?? ''} by ${run.actor?.login ?? run.triggering_actor?.login ?? 'unknown'}`,
+    url: run.html_url ?? `https://github.com/${repo}/actions/runs/${run.id}`,
+    createdAt: run.created_at ?? new Date().toISOString(),
+    seen: false,
+    payload: { workflow_run: run },
+  };
+}
+
 export function normalizeEvent(raw: any, repo: string): TrackedEvent {
   const base = {
     id: String(raw.id),
@@ -94,7 +119,7 @@ export function normalizeEvent(raw: any, repo: string): TrackedEvent {
       return {
         ...base,
         type: failed ? 'workflow_failed' : 'workflow_passed',
-        title: `${failed ? '❌' : '✅'} ${run?.name ?? 'Pipeline'} ${conclusion} on ${run?.head_branch}`,
+        title: `${run?.name ?? 'Pipeline'} ${conclusion} on ${run?.head_branch} by ${run?.actor?.login ?? run?.triggering_actor?.login ?? 'unknown'}`,
         url: run?.html_url ?? '',
       };
     }

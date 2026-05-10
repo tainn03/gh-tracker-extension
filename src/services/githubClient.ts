@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { throttling } from '@octokit/plugin-throttling';
 import type { TrackedEvent, EnrichedEventData } from '../types';
-import { normalizeEvent } from '../utils/eventNormalizer';
+import { normalizeEvent, normalizeWorkflowRun } from '../utils/eventNormalizer';
 
 // Register the throttling plugin globally
 const ThrottledOctokit = Octokit.plugin(throttling);
@@ -79,7 +79,23 @@ export class GitHubClient {
       newEvents = allEvents;
     }
 
+    // ── Also fetch completed workflow runs from the Actions API ──────
+    //     The Events API does NOT return WorkflowRunEvent, so we must
+    //     call the Actions API separately.
+    try {
+      const workflowRuns = await this.getWorkflowRuns(nameWithOwner);
+      const workflowEvents = workflowRuns.map(run => normalizeWorkflowRun(run, nameWithOwner));
+      // Merge and re-sort newest-first
+      newEvents.push(...workflowEvents);
+      newEvents.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch {
+      // Workflow runs are best-effort
+    }
+
     // Enrich only new events with full detail from GitHub API (PR diff, commit diff, etc.)
+    // NOTE: workflow events from Actions API use a different payload structure;
+    //       enrichEvent handles them via the 'workflow_failed'/'workflow_passed' branch
+    //       which reads payload.workflow_run.
     for (const evt of newEvents) {
       await this.enrichEvent(evt, nameWithOwner);
     }
@@ -392,6 +408,26 @@ export class GitHubClient {
         state: r.state ?? 'COMMENTED',
         createdAt: r.submitted_at ?? '',
       }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Fetch completed workflow runs from the Actions API.
+   * The Events API does NOT return WorkflowRunEvent, so we must call this separately.
+   * Returns raw API response items; caller normalises them into TrackedEvent.
+   */
+  async getWorkflowRuns(nameWithOwner: string): Promise<any[]> {
+    const [owner, repo] = nameWithOwner.split('/');
+    try {
+      const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
+        owner,
+        repo,
+        status: 'completed',
+        per_page: 10,
+      });
+      return data.workflow_runs ?? [];
     } catch {
       return [];
     }

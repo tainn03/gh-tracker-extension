@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ConfigService } from '../services/configService';
 import type { EventStore } from '../storage/eventStore';
 import type { TrackedEvent, EventType } from '../types';
 
@@ -24,7 +25,19 @@ export class EventTreeProvider implements vscode.TreeDataProvider<EventItem> {
   getChildren(): EventItem[] {
     if (!this.currentRepo) { return []; }
     const events = this.store.getEventsForRepo(this.currentRepo, this.maxEvents);
-    return events.map(e => new EventItem(e));
+
+    // Apply active filter (event types + actors)
+    const filter = ConfigService.get().eventFilter;
+    const hasTypes = filter.eventTypes.length > 0;
+    const hasActors = filter.actors.length > 0;
+    let filtered = events;
+    if (hasTypes) {
+      filtered = filtered.filter(e => filter.eventTypes.includes(e.type));
+    }
+    if (hasActors) {
+      filtered = filtered.filter(e => filter.actors.includes(e.actor));
+    }
+    return filtered.map(e => new EventItem(e));
   }
 }
 

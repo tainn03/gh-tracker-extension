@@ -7,6 +7,9 @@ export class ConfigService {
   /** Read the current config snapshot from VSCode settings */
   static get(): ExtensionConfig {
     const cfg = vscode.workspace.getConfiguration(ConfigService.SECTION);
+    // Read the new eventFilter object; fall back to old notifyFilterTypes for migration
+    const eventFilter = cfg.get<{ eventTypes?: string[]; actors?: string[] }>('eventFilter', {});
+    const oldTypes = cfg.get<string[]>('notifyFilterTypes', []);
     return {
       hostUrl:             cfg.get<string>('hostUrl', 'https://github.com').replace(/\/$/, ''),
       repositories:        cfg.get<string[]>('repositories', []),
@@ -14,7 +17,11 @@ export class ConfigService {
       aiEnabled:           cfg.get<boolean>('aiEnabled', false),
       maxEventsShown:      cfg.get<number>('maxEventsShown', 10),
       openIn:              cfg.get<'vscode'|'external'>('openIn', 'vscode'),
-      notifyFilterTypes:   cfg.get<string[]>('notifyFilterTypes', []),
+      notifyFilterTypes:   oldTypes,
+      eventFilter: {
+        eventTypes: eventFilter.eventTypes ?? oldTypes,
+        actors:     eventFilter.actors ?? [],
+      },
     };
   }
 
