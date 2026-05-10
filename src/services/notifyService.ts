@@ -18,7 +18,7 @@ export class NotifyService {
       filtered = filtered.filter(e => filter.actors.includes(e.actor));
     }
 
-    if (filtered.length === 0) return;
+    if (filtered.length === 0) {return;}
 
     // Sort oldest-first so the newest toast notification appears last
     const sorted = [...filtered].sort(

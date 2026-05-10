@@ -58,7 +58,7 @@ export class AIService implements vscode.Disposable {
       // ── Use pre-fetched raw data ──────────────────────────────────────
       if (rawData.prTitle) {
         contextText += '\nPR #' + (event.url.match(/\/pull\/(\d+)/)?.[1] ?? '') + ': ' + rawData.prTitle + '\n';
-        if (rawData.prBody) contextText += 'Description: ' + rawData.prBody.slice(0, 1000) + '\n';
+        if (rawData.prBody) {contextText += 'Description: ' + rawData.prBody.slice(0, 1000) + '\n';}
         contextText += 'State: ' + (rawData.prState ?? 'unknown') + ' | Merged: ' + rawData.prMerged + '\n';
         contextText += 'Branch: ' + (rawData.prHeadBranch ?? '?') + ' → ' + (rawData.prBaseBranch ?? '?') + '\n';
         contextText += 'Files changed: ' + (rawData.prChangedFiles ?? 0) + ' (+' + (rawData.prAdditions ?? 0) + '/-' + (rawData.prDeletions ?? 0) + ')\n';
@@ -69,12 +69,12 @@ export class AIService implements vscode.Disposable {
           contextText += '\nFiles changed:\n';
           for (const f of rawData.prFiles) {
             contextText += '  ' + f.status + ' ' + f.filename + (f.additions != null ? ' (+' + f.additions + '/-' + f.deletions + ')' : '') + '\n';
-            if (f.patch) contextText += f.patch.slice(0, 800) + '\n';
+            if (f.patch) {contextText += f.patch.slice(0, 800) + '\n';}
           }
         }
         if (rawData.commentBody) {
           contextText += '\nComment: ' + rawData.commentBody + '\n';
-          if (rawData.commentPath) contextText += 'Comment on file: ' + rawData.commentPath + '\n';
+          if (rawData.commentPath) {contextText += 'Comment on file: ' + rawData.commentPath + '\n';}
         }
       }
 
@@ -273,7 +273,7 @@ export class AIService implements vscode.Disposable {
 
     const toScore = candidates.length > 0 ? candidates : allEvents.slice(0, 20);
 
-    if (toScore.length === 0) return [];
+    if (toScore.length === 0) {return [];}
 
     const model = await this.getModel();
     if (!model) {

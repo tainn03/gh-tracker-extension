@@ -40,7 +40,7 @@ export class EventStore {
    */
   private scheduleFlush(): void {
     this.dirty = true;
-    if (this.flushTimer) return;
+    if (this.flushTimer) {return;}
     this.flushTimer = setTimeout(() => {
       this.flushTimer = undefined;
       if (this.dirty) {
@@ -58,7 +58,7 @@ export class EventStore {
 
   /** Insert events that don't already exist (dedup by id). */
   insertMany(newEvents: TrackedEvent[]): void {
-    if (newEvents.length === 0) return;
+    if (newEvents.length === 0) {return;}
 
     const existing = new Set(this.events.map(e => e.id));
     let inserted = 0;
@@ -71,7 +71,7 @@ export class EventStore {
       }
     }
 
-    if (inserted === 0) return;
+    if (inserted === 0) {return;}
 
     // Keep newest-first for efficient LIMIT queries
     this.events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -105,7 +105,7 @@ export class EventStore {
     for (const e of this.events) {
       if (e.repo === repo) {
         results.push(e);
-        if (results.length >= limit) break;
+        if (results.length >= limit) {break;}
       }
     }
     return results;
@@ -114,7 +114,7 @@ export class EventStore {
   /** Get the ID of the most recent event for a repo. */
   getLatestEventId(repo: string): string | undefined {
     for (const e of this.events) {
-      if (e.repo === repo) return e.id;
+      if (e.repo === repo) {return e.id;}
     }
     return undefined;
   }
@@ -123,7 +123,7 @@ export class EventStore {
   getUnreadCount(repo: string): number {
     let count = 0;
     for (const e of this.events) {
-      if (e.repo === repo && !e.seen) count++;
+      if (e.repo === repo && !e.seen) {count++;}
     }
     return count;
   }
@@ -131,7 +131,7 @@ export class EventStore {
   /** Does the repo have any unread workflow failures? */
   hasUnreadFailure(repo: string): boolean {
     for (const e of this.events) {
-      if (e.repo === repo && e.type === 'workflow_failed' && !e.seen) return true;
+      if (e.repo === repo && e.type === 'workflow_failed' && !e.seen) {return true;}
     }
     return false;
   }
@@ -145,7 +145,7 @@ export class EventStore {
         changed = true;
       }
     }
-    if (changed) this.scheduleFlush();
+    if (changed) {this.scheduleFlush();}
   }
 
   /** Mark a single event as seen. */

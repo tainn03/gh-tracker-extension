@@ -153,7 +153,7 @@ export class GitHubClient {
         ? jobsData.jobs.filter(j => j.conclusion === 'failure')
         : jobsData.jobs;
 
-      if (jobs.length === 0) return onlyFailed ? 'No failed jobs found.' : 'No jobs found.';
+      if (jobs.length === 0) {return onlyFailed ? 'No failed jobs found.' : 'No jobs found.';}
 
       let logText = '';
       for (const job of jobs.slice(0, 5)) { // max 5 jobs
@@ -215,7 +215,7 @@ export class GitHubClient {
         const prNumber = payload?.pull_request?.number
           ?? payload?.issue?.number
           ?? parseInt(evt.url.match(/\/pull\/(\d+)/)?.[1] ?? '0', 10);
-        if (!prNumber) return;
+        if (!prNumber) {return;}
 
         const { data: pr } = await this.octokit.pulls.get({ owner, repo, pull_number: prNumber });
         const { data: commits } = await this.octokit.pulls.listCommits({ owner, repo, pull_number: prNumber, per_page: 20 });
@@ -315,7 +315,7 @@ export class GitHubClient {
       // ── Review requested events: fetch PR details for AI review ──────
       if (evt.type === 'review_requested') {
         const prNumber = payload?.pull_request?.number ?? parseInt(evt.url.match(/\/pull\/(\d+)/)?.[1] ?? '0', 10);
-        if (!prNumber) return;
+        if (!prNumber) {return;}
 
         const { data: pr } = await this.octokit.pulls.get({ owner, repo, pull_number: prNumber });
         evt.rawData = JSON.stringify({

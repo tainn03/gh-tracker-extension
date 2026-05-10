@@ -6,7 +6,7 @@
   },
   "displayName": "GitHub Enterprise Tracker",
   "description": "Real-time event tracking for GitHub / GHE repositories",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "publisher": "ngtai",
   "engines": {
     "vscode": "^1.90.0",

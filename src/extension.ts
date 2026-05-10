@@ -217,7 +217,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         placeHolder: 'e.g. PR reviews, pipeline failures, releases needing attention',
         ignoreFocusOut: true,
       });
-      if (!query) return;
+      if (!query) {return;}
 
       await vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
@@ -239,7 +239,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         { label: '$(clear-all) Clear All Filters',      description: 'Remove all type and actor filters' },
         { label: '$(info) Show Current Filter',         description: current.eventTypes.length + ' type(s), ' + current.actors.length + ' actor(s)' },
       ], { placeHolder: 'Choose filter action', title: 'GH Tracker: Event Filter', ignoreFocusOut: true });
-      if (!pick) return;
+      if (!pick) {return;}
 
       const section = vscode.workspace.getConfiguration(ConfigService.SECTION);
 
@@ -252,9 +252,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
       if (pick.label.includes('Show Current')) {
         const parts: string[] = [];
-        if (current.eventTypes.length > 0) parts.push('Types: ' + current.eventTypes.join(', '));
-        if (current.actors.length > 0) parts.push('Actors: ' + current.actors.join(', '));
-        if (parts.length === 0) parts.push('No filters active — showing all events');
+        if (current.eventTypes.length > 0) {parts.push('Types: ' + current.eventTypes.join(', '));}
+        if (current.actors.length > 0) {parts.push('Actors: ' + current.actors.join(', '));}
+        if (parts.length === 0) {parts.push('No filters active — showing all events');}
         vscode.window.showInformationMessage('GH Tracker Filter: ' + parts.join(' | '));
         return;
       }
@@ -277,7 +277,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           title: 'GH Tracker: Filter Event Types',
           ignoreFocusOut: true,
         });
-        if (!selected) return;
+        if (!selected) {return;}
         const selectedTypes = selected.map(s => s.label);
         const allSelected = ALL_EVENT_TYPES.every(t => selectedTypes.includes(t));
         await section.update('eventFilter', {
@@ -301,7 +301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           value: current.actors.join(', '),
           ignoreFocusOut: true,
         });
-        if (input === undefined) return; // cancelled
+        if (input === undefined) {return;} // cancelled
         const actors = input.split(',').map(a => a.trim()).filter(Boolean);
         await section.update('eventFilter', {
           eventTypes: current.eventTypes,
