@@ -43,10 +43,6 @@
         {
           "id": "ghTracker.search",
           "name": "Search"
-        },
-        {
-          "id": "ghTracker.summary",
-          "name": "Today Summary"
         }
       ]
     },
@@ -72,10 +68,6 @@
       {
         "command": "ghTracker.markRead",
         "title": "GH Tracker: Mark All Read"
-      },
-      {
-        "command": "ghTracker.aiReview",
-        "title": "GH Tracker: AI Review PR"
       },
       {
         "command": "ghTracker.showEvents",
@@ -104,9 +96,13 @@
         "icon": "$(search)"
       },
       {
-        "command": "ghTracker.aiSummary",
-        "title": "GH Tracker: Today Summary",
-        "icon": "$(list-tree)"
+        "command": "ghTracker.aiReview",
+        "title": "GH Tracker: AI Review PR"
+      },
+      {
+        "command": "ghTracker.setNotifyFilter",
+        "title": "GH Tracker: Filter Notifications...",
+        "icon": "$(filter)"
       }
     ],
     "menus": {
@@ -132,8 +128,8 @@
           "group": "navigation"
         },
         {
-          "command": "ghTracker.aiSummary",
-          "when": "view == ghTracker.summary",
+          "command": "ghTracker.setNotifyFilter",
+          "when": "view == ghTracker.events",
           "group": "navigation"
         }
       ],
@@ -143,16 +139,16 @@
           "when": "view == ghTracker.repos && viewItem == repo"
         },
         {
-          "command": "ghTracker.aiReview",
-          "when": "view == ghTracker.events && viewItem == event_pr"
-        },
-        {
           "command": "ghTracker.aiSummarize",
           "when": "view == ghTracker.events && (viewItem == event || viewItem == event_pr || viewItem == event_failure)"
         },
         {
           "command": "ghTracker.aiInvestigate",
           "when": "view == ghTracker.events && viewItem == event_failure"
+        },
+        {
+          "command": "ghTracker.aiReview",
+          "when": "view == ghTracker.events && viewItem == event_review_request"
         }
       ]
     },
@@ -194,11 +190,11 @@
           "default": "vscode",
           "description": "Open event links in VSCode Simple Browser or external browser"
         },
-        "ghTracker.aiLanguage": {
-          "type": "string",
-          "enum": ["vi", "en"],
-          "default": "vi",
-          "description": "Language for AI-generated responses (Vietnamese / English)"
+        "ghTracker.notifyFilterTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Event types that trigger notifications. Empty = notify all."
         }
       }
     }

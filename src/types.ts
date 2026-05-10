@@ -9,6 +9,8 @@ export interface TrackedEvent {
   createdAt: string;      // ISO 8601 timestamp
   seen: boolean;          // has the user dismissed this notification?
   payload: unknown;       // raw GitHub event payload, stored as JSON
+  diff?: string;          // raw full diff for commit/push events (stored for AI summary)
+  rawData?: string;       // JSON-serialized enriched data fetched from GitHub API (PR details, comments, etc.)
 }
 
 /** All event types the extension handles. */
@@ -47,5 +49,40 @@ export interface ExtensionConfig {
   aiEnabled: boolean;
   maxEventsShown: number;
   openIn: 'vscode' | 'external';
-  aiLanguage: 'vi' | 'en';
+  notifyFilterTypes: string[];  // event types allowed to notify; empty = notify all
+}
+
+/** Structured enriched data stored in TrackedEvent.rawData (JSON-serialized). */
+export interface EnrichedEventData {
+  // PR detail
+  prTitle?: string;
+  prBody?: string;
+  prState?: string;
+  prMerged?: boolean;
+  prHeadBranch?: string;
+  prBaseBranch?: string;
+  prCommits?: Array<{ sha: string; message: string; author: string }>;
+  prChangedFiles?: number;
+  prAdditions?: number;
+  prDeletions?: number;
+  prFiles?: Array<{ filename: string; status: string; patch?: string; additions?: number; deletions?: number }>;
+  // Push / commit
+  pushDiff?: string;
+  pushCommits?: Array<{ sha: string; message: string; author: string }>;
+  // Workflow
+  workflowName?: string;
+  workflowBranch?: string;
+  workflowConclusion?: string;
+  workflowTriggerEvent?: string;
+  workflowLogs?: string;
+  // Comment
+  commentBody?: string;
+  commentPath?: string;
+  // Issue
+  issueTitle?: string;
+  issueNumber?: number;
+  issueBody?: string;
+  issueState?: string;
+  // Release
+  releaseBody?: string;
 }

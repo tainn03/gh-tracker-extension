@@ -66,11 +66,14 @@ class EventItem extends vscode.TreeItem {
     );
 
     // context values for menu scoping:
-    //   event_pr       → AI Review (PR events)
-    //   event_failure  → AI Investigate (workflow failures)
-    //   event          → AI Summarize + generic actions (all other events)
+    //   event_pr              → AI Review (PR events)
+    //   event_failure         → AI Investigate (workflow failures)
+    //   event_review_request  → AI Review PR (review_requested)
+    //   event                 → AI Summarize + generic actions (all other events)
     if (event.type === 'workflow_failed') {
       this.contextValue = 'event_failure';
+    } else if (event.type === 'review_requested') {
+      this.contextValue = 'event_review_request';
     } else if (event.type.startsWith('pr_')) {
       this.contextValue = 'event_pr';
     } else {

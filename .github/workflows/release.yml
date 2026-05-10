@@ -21,13 +21,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build extension JS
-        run: npm run package:js
-
       - name: Package VSIX (RELEASE)
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          npx @vscode/vsce package -o "gh-tracker-${VERSION}-RELEASE.vsix"
+          npm run package -o "gh-tracker-${VERSION}-RELEASE.vsix"
 
       - name: Upload Release Asset
         run: |

@@ -22,6 +22,7 @@ export function normalizeEvent(raw: any, repo: string): TrackedEvent {
       if (action === 'closed' && merged) { type = 'pr_merged'; verb = 'merged'; }
       else if (action === 'closed') { type = 'pr_closed'; verb = 'closed'; }
       else if (action === 'ready_for_review') { type = 'pr_ready'; verb = 'marked ready'; }
+      else if (action === 'review_requested') { type = 'review_requested'; verb = 'requested review for'; }
 
       return {
         ...base, type,

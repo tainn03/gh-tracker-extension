@@ -16,104 +16,7 @@ export class AIService {
     }
   }
 
-  /** Read aiLanguage setting and return an inline instruction for the model. */
-  private lang(): string {
-    const cfg = vscode.workspace.getConfiguration('ghTracker');
-    const lang = cfg.get<'vi' | 'en'>('aiLanguage', 'vi');
-    return lang === 'en'
-      ? 'Write your response in English.'
-      : 'Vi\u1EBFt ph\u1EA3n h\u1ED3i b\u1EB1ng ti\u1EBFng Vi\u1EC7t.';
-  }
-
-  // ── AI-1: PR review ────────────────────────────────────────────────────
-
-  async reviewPR(
-    event: TrackedEvent,
-    diffFiles: Array<{ filename: string; patch?: string; additions?: number; deletions?: number; status?: string }>,
-    client?: GitHubClient
-  ): Promise<void> {
-    const model = await this.getModel();
-    if (!model) {
-      vscode.window.showWarningMessage('GH Tracker: Copilot is not available.');
-      return;
-    }
-
-    const output = vscode.window.createOutputChannel('GH Tracker — AI Review');
-    output.show(true);
-    output.appendLine('=== AI Pull Request Review ===\n');
-    output.appendLine('PR: ' + event.title);
-    output.appendLine('Repo: ' + event.repo + ' | Actor: ' + event.actor + '\n');
-
-    let contextParts: string[] = [];
-
-    const prMatch = event.url.match(/\/pull\/(\d+)/);
-    const prNumber = prMatch ? parseInt(prMatch[1], 10) : null;
-
-    if (prNumber && client) {
-      try {
-        const details = await client.getPRDetails(event.repo, prNumber);
-        contextParts.push('## Pull Request Information');
-        contextParts.push('Title: ' + details.title);
-        contextParts.push('Description: ' + (details.body || '(none)'));
-        contextParts.push('State: ' + details.state + ' | Merged: ' + details.merged);
-        contextParts.push('Files changed: ' + details.changedFiles + ' (+' + details.additions + '/-' + details.deletions + ')');
-        if (details.commits.length > 0) {
-          contextParts.push('\n## Commits in this PR');
-          for (const c of details.commits) {
-            contextParts.push('  ' + c.sha + ' ' + c.message + ' (' + c.author + ')');
-          }
-        }
-      } catch {}
-    }
-
-    if (diffFiles.length > 0) {
-      contextParts.push('\n## Files Changed');
-      for (const f of diffFiles.slice(0, 15)) {
-        const stats = (f.additions != null) ? ' (+' + f.additions + '/-' + f.deletions + ')' : '';
-        contextParts.push('  ' + (f.status || 'modified') + ' ' + f.filename + stats);
-      }
-
-      contextParts.push('\n## Diff Content');
-      let diffText = '';
-      for (const f of diffFiles.slice(0, 10)) {
-        const patch = f.patch || '';
-        diffText += '\n--- ' + f.filename + ' ---\n' + patch.slice(0, 1000);
-      }
-      contextParts.push(diffText.slice(0, 8000));
-    }
-
-    const fullContext = contextParts.join('\n');
-
-    const prompt = 'You are a senior software engineer conducting a thorough code review.\n\n' +
-      fullContext + '\n\n' +
-      'Analyze this pull request in detail. Cover:\n' +
-      '1. OVERVIEW: What does this PR do? Summarize the changes.\n' +
-      '2. CODE QUALITY: Potential bugs, error handling gaps, edge cases.\n' +
-      '3. SECURITY: Any injection risks, auth issues, data exposure.\n' +
-      '4. PERFORMANCE: Inefficient queries, unnecessary allocations, large payloads.\n' +
-      '5. ARCHITECTURE: Design concerns, coupling, testability issues.\n' +
-      '6. SPECIFIC FEEDBACK: For each file, call out notable lines.\n\n' +
-      'Be specific. Reference exact filenames and line patterns. Skip style nitpicks. Focus on what matters.\n\n' +
-      this.lang();
-
-    try {
-      const cts = new vscode.CancellationTokenSource();
-      const req = await model.sendRequest(
-        [vscode.LanguageModelChatMessage.User(prompt)],
-        {},
-        cts.token
-      );
-      output.appendLine('\u2500'.repeat(60));
-      for await (const chunk of req.text) {
-        output.append(chunk);
-      }
-      output.appendLine('\n\n=== End of AI Review ===');
-    } catch (err: any) {
-      output.appendLine('\nError: ' + err.message);
-    }
-  }
-
-  // ── AI-2: Notification scoring ─────────────────────────────────────────
+  // ── AI-1: Notification scoring ─────────────────────────────────────────
 
   async scoreEventUrgency(event: TrackedEvent, currentUser: string): Promise<number> {
     const model = await this.getModel();
@@ -140,7 +43,7 @@ Reply with ONLY a single digit 1-5.`;
     }
   }
 
-  // ── AI-3: Summarize an event (output channel) ──────────────────────────
+  // ── AI-2: Summarize an event (output channel) ──────────────────────────
 
   async summarizeEvent(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
@@ -153,58 +56,125 @@ Reply with ONLY a single digit 1-5.`;
     output.show(true);
     output.appendLine('=== AI Summary: ' + event.title + ' ===\n');
 
+    // Build context: prefer pre-enriched rawData, fall back to live API calls
     let contextText = 'Event: ' + event.type + '\nRepo: ' + event.repo + '\nActor: ' + event.actor + '\nTime: ' + event.createdAt + '\n';
 
-    if (event.type.startsWith('pr_')) {
-      const prMatch = event.url.match(/\/pull\/(\d+)/);
-      if (prMatch && client) {
-        try {
-          const prNum = parseInt(prMatch[1], 10);
-          const details = await client.getPRDetails(event.repo, prNum);
-          contextText += '\nPR #' + prNum + ': ' + details.title + '\nState: ' + details.state + '\nMerged: ' + details.merged + '\nDescription: ' + details.body.slice(0, 1000) + '\n';
-          contextText += 'Files changed: ' + details.changedFiles + ' (+' + details.additions + '/-' + details.deletions + ')\n';
-          contextText += 'Commits:\n' + details.commits.map(c => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
-        } catch { }
-      }
-    } else if (event.type === 'push') {
-      const payload = event.payload as any;
-      const branch = (payload?.ref as string)?.replace('refs/heads/', '') ?? 'unknown';
-      contextText += '\nBranch: ' + branch + '\n';
-      if (payload?.commits) {
-        contextText += 'Commits:\n' + (payload.commits as any[]).map((c: any) => '  ' + (c.sha?.slice(0, 7) ?? '') + ' ' + (c.message?.split('\n')[0] ?? '') + ' (' + (c.author?.name ?? '') + ')').join('\n') + '\n';
-      }
-      if (client && payload?.ref) {
-        try {
-          const commits = await client.getPushCommitDetails(event.repo, payload.ref);
-          if (commits.length > 0) {
-            contextText += '\nAdditional commits from API:\n' + commits.map(c => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
+    let rawData: any = null;
+    try {
+      rawData = event.rawData ? JSON.parse(event.rawData) : null;
+    } catch {
+      // Malformed rawData — ignore and fall through to live API
+    }
+
+    if (rawData) {
+      // ── Use pre-fetched raw data ──────────────────────────────────────
+      if (rawData.prTitle) {
+        contextText += '\nPR #' + (event.url.match(/\/pull\/(\d+)/)?.[1] ?? '') + ': ' + rawData.prTitle + '\n';
+        if (rawData.prBody) contextText += 'Description: ' + rawData.prBody.slice(0, 1000) + '\n';
+        contextText += 'State: ' + (rawData.prState ?? 'unknown') + ' | Merged: ' + rawData.prMerged + '\n';
+        contextText += 'Branch: ' + (rawData.prHeadBranch ?? '?') + ' → ' + (rawData.prBaseBranch ?? '?') + '\n';
+        contextText += 'Files changed: ' + (rawData.prChangedFiles ?? 0) + ' (+' + (rawData.prAdditions ?? 0) + '/-' + (rawData.prDeletions ?? 0) + ')\n';
+        if (rawData.prCommits?.length) {
+          contextText += 'Commits:\n' + rawData.prCommits.map((c: any) => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
+        }
+        if (rawData.prFiles?.length) {
+          contextText += '\nFiles changed:\n';
+          for (const f of rawData.prFiles) {
+            contextText += '  ' + f.status + ' ' + f.filename + (f.additions != null ? ' (+' + f.additions + '/-' + f.deletions + ')' : '') + '\n';
+            if (f.patch) contextText += f.patch.slice(0, 800) + '\n';
           }
-        } catch { }
+        }
+        if (rawData.commentBody) {
+          contextText += '\nComment: ' + rawData.commentBody + '\n';
+          if (rawData.commentPath) contextText += 'Comment on file: ' + rawData.commentPath + '\n';
+        }
       }
-    } else if (event.type === 'workflow_failed' || event.type === 'workflow_passed') {
-      const payload = event.payload as any;
-      const run = payload?.workflow_run;
-      if (run) {
-        contextText += '\nWorkflow: ' + (run.name ?? 'unknown') + '\nBranch: ' + (run.head_branch ?? '') + '\nStatus: ' + run.status + '\nConclusion: ' + run.conclusion + '\n';
-        contextText += 'Trigger event: ' + (run.event ?? '') + '\n';
+
+      if (rawData.pushDiff) {
+        const payload = event.payload as any;
+        const branch = (payload?.ref as string)?.replace('refs/heads/', '') ?? 'unknown';
+        contextText += '\nBranch: ' + branch + '\n';
+        if (rawData.pushCommits?.length) {
+          contextText += 'Commits:\n' + rawData.pushCommits.map((c: any) => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
+        }
+        contextText += '\nFull diff:\n' + rawData.pushDiff.slice(0, 8000) + '\n';
       }
-    } else if (event.type === 'release_published') {
-      const payload = event.payload as any;
-      const release = payload?.release;
-      if (release) {
-        contextText += '\nRelease: ' + (release.tag_name ?? '') + '\nName: ' + (release.name ?? '') + '\n';
-        contextText += 'Body: ' + (release.body ?? '').slice(0, 1000) + '\n';
+
+      if (rawData.workflowName) {
+        contextText += '\nWorkflow: ' + rawData.workflowName + '\nBranch: ' + (rawData.workflowBranch ?? '') + '\nConclusion: ' + (rawData.workflowConclusion ?? '') + '\nTrigger: ' + (rawData.workflowTriggerEvent ?? '') + '\n';
+      }
+      if (rawData.workflowLogs) {
+        contextText += 'Logs:\n' + rawData.workflowLogs.slice(-3000) + '\n';
+      }
+
+      if (rawData.issueTitle) {
+        contextText += '\nIssue #' + (rawData.issueNumber ?? '') + ': ' + rawData.issueTitle + ' (' + (rawData.issueState ?? '') + ')\n';
+      }
+      if (rawData.issueBody) {
+        contextText += 'Issue body:\n' + rawData.issueBody.slice(0, 2000) + '\n';
+      }
+      if (rawData.commentBody && !rawData.prTitle) {
+        contextText += 'Comment: ' + rawData.commentBody + '\n';
+      }
+      if (rawData.releaseBody) {
+        contextText += '\nRelease notes:\n' + rawData.releaseBody.slice(0, 2000) + '\n';
+      }
+    } else {
+      // ── Fall back: fetch data live ────────────────────────────────────
+      if (event.type.startsWith('pr_')) {
+        const prMatch = event.url.match(/\/pull\/(\d+)/);
+        if (prMatch && client) {
+          try {
+            const prNum = parseInt(prMatch[1], 10);
+            const details = await client.getPRDetails(event.repo, prNum);
+            contextText += '\nPR #' + prNum + ': ' + details.title + '\nState: ' + details.state + '\nMerged: ' + details.merged + '\nDescription: ' + details.body.slice(0, 1000) + '\n';
+            contextText += 'Files changed: ' + details.changedFiles + ' (+' + details.additions + '/-' + details.deletions + ')\n';
+            contextText += 'Commits:\n' + details.commits.map(c => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
+          } catch { }
+        }
+      } else if (event.type === 'push') {
+        const payload = event.payload as any;
+        const branch = (payload?.ref as string)?.replace('refs/heads/', '') ?? 'unknown';
+        contextText += '\nBranch: ' + branch + '\n';
+        if (payload?.commits) {
+          contextText += 'Commits:\n' + (payload.commits as any[]).map((c: any) => '  ' + (c.sha?.slice(0, 7) ?? '') + ' ' + (c.message?.split('\n')[0] ?? '') + ' (' + (c.author?.name ?? '') + ')').join('\n') + '\n';
+        }
+        if (client && payload?.ref) {
+          try {
+            const commits = await client.getPushCommitDetails(event.repo, payload.ref);
+            if (commits.length > 0) {
+              contextText += '\nAdditional commits from API:\n' + commits.map(c => '  ' + c.sha + ' ' + c.message + ' (' + c.author + ')').join('\n') + '\n';
+            }
+          } catch { }
+        }
+        if (event.diff) {
+          contextText += '\nFull diff:\n' + event.diff.slice(0, 8000) + '\n';
+        }
+      } else if (event.type === 'workflow_failed' || event.type === 'workflow_passed') {
+        const payload = event.payload as any;
+        const run = payload?.workflow_run;
+        if (run) {
+          contextText += '\nWorkflow: ' + (run.name ?? 'unknown') + '\nBranch: ' + (run.head_branch ?? '') + '\nStatus: ' + run.status + '\nConclusion: ' + run.conclusion + '\n';
+          contextText += 'Trigger event: ' + (run.event ?? '') + '\n';
+        }
+      } else if (event.type === 'release_published') {
+        const payload = event.payload as any;
+        const release = payload?.release;
+        if (release) {
+          contextText += '\nRelease: ' + (release.tag_name ?? '') + '\nName: ' + (release.name ?? '') + '\n';
+          contextText += 'Body: ' + (release.body ?? '').slice(0, 1000) + '\n';
+        }
       }
     }
 
     const prompt = 'You are a developer notification assistant. Provide a DETAILED summary of this GitHub event.\n\n' +
       'Cover:\n' +
       '1. WHAT: What exactly happened (PR merged, branch created, pipeline failed, etc.)\n' +
-      '2. DETAILS: Key specifics \u2014 PR number, branch name, files changed, commit messages\n' +
-      '3. CONTEXT: Why this matters \u2014 is it a feature? Bug fix? Release? CI failure?\n' +
+      '2. DETAILS: Key specifics, display as bullet points\n' +
+      '3. CONTEXT: Why this matters — is it a feature? Bug fix? Release? CI failure?\n' +
       '4. IMPACT: Who or what is affected\n\n' +
       'Be thorough but well-organized. Use plain text with clear sections. Avoid fluff.\n\n' +
-      this.lang() + '\n\nEvent data:\n\n' + contextText;
+      'Write your response in English.\n\nEvent data:\n\n' + contextText;
 
     try {
       const cts = new vscode.CancellationTokenSource();
@@ -222,7 +192,7 @@ Reply with ONLY a single digit 1-5.`;
     }
   }
 
-  // ── AI-4: Investigate pipeline failure ─────────────────────────────────
+  // ── AI-3: Investigate pipeline failure ─────────────────────────────────
 
   async investigateFailure(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
@@ -231,7 +201,7 @@ Reply with ONLY a single digit 1-5.`;
       return;
     }
 
-    const output = vscode.window.createOutputChannel('GH Tracker \u2014 Failure Investigation');
+    const output = vscode.window.createOutputChannel('GH Tracker — Failure Investigation');
     output.show(true);
     output.appendLine('=== Failure Investigation: ' + event.title + ' ===\n');
 
@@ -249,7 +219,7 @@ Reply with ONLY a single digit 1-5.`;
       output.appendLine('(No log data available from API)\n');
       const promptFallback = 'A CI/CD pipeline failed. Based on the event information, suggest what might have gone wrong.\n\n' +
         'Event: ' + event.type + '\nRepo: ' + event.repo + '\nTitle: ' + event.title + '\nWorkflow: ' + (run?.name ?? 'unknown') + '\nBranch: ' + (run?.head_branch ?? 'unknown') + '\n\n' +
-        'Provide:\n- Likely root cause\n- How to investigate further\n- Possible fixes\n\n' + this.lang();
+        'Provide:\n- Likely root cause\n- How to investigate further\n- Possible fixes\n\nWrite your response in English.';
       try {
         const cts = new vscode.CancellationTokenSource();
         const req = await model.sendRequest(
@@ -272,8 +242,8 @@ Reply with ONLY a single digit 1-5.`;
       '2. IMPACT: What services/functionality is affected\n' +
       '3. FIX: Step-by-step to resolve the issue\n' +
       '4. PREVENTION: How to avoid this in the future\n\n' +
-      'Format with clear headers. Be specific \u2014 reference actual error messages from the logs.\n\n' +
-      this.lang() + '\n\nLog tail:\n' + logTail.slice(-2000);
+      'Format with clear headers. Be specific — reference actual error messages from the logs.\n\n' +
+      'Write your response in English.\n\nLog tail:\n' + logTail.slice(-2000);
 
     try {
       const cts = new vscode.CancellationTokenSource();
@@ -291,7 +261,7 @@ Reply with ONLY a single digit 1-5.`;
     }
   }
 
-  // ── AI-5: Semantic event search ────────────────────────────────────────
+  // ── AI-4: Semantic event search ────────────────────────────────────────
 
   async searchEvents(query: string, allEvents: TrackedEvent[]): Promise<Array<{ event: TrackedEvent; relevance: string }>> {
     if (!query.trim()) {
@@ -329,7 +299,7 @@ Reply with ONLY a single digit 1-5.`;
       const prompt = 'Given the search query: "' + query + '"\n\n' +
         'Rate each event\'s relevance from 0 (completely irrelevant) to 10 (exactly what the user is looking for).\n' +
         'Respond with ONLY a JSON array of objects: [{"index": 0, "score": 5, "reason": "concise reason"}, ...]\n' +
-        'Write the "reason" text in the configured language.\n' + this.lang() + '\n\nEvents:\n' + eventsJson;
+        'Write the "reason" text in English.\n\nEvents:\n' + eventsJson;
 
       try {
         const cts = new vscode.CancellationTokenSource();
@@ -360,145 +330,114 @@ Reply with ONLY a single digit 1-5.`;
     return results.slice(0, 20);
   }
 
-  // ── AI-6: Daily summary (legacy — returns single text) ─────────────────
+  // ── AI-5: PR review (for review_requested events) ─────────────────────
 
-  async generateDailySummary(events: TrackedEvent[], userPrompt: string): Promise<string> {
+  async reviewPR(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
     if (!model) {
-      return 'AI features require GitHub Copilot to be installed and signed in.';
+      vscode.window.showWarningMessage('GH Tracker: Copilot is not available.');
+      return;
     }
 
-    const byRepo = new Map<string, TrackedEvent[]>();
-    for (const e of events) {
-      const list = byRepo.get(e.repo) ?? [];
-      list.push(e);
-      byRepo.set(e.repo, list);
-    }
-
-    let eventsText = '';
-    for (const [repo, repoEvents] of byRepo) {
-      eventsText += '\n## ' + repo + '\n';
-      for (const e of repoEvents) {
-        eventsText += '- [' + e.type + '] ' + e.actor + ': ' + e.title + ' (' + new Date(e.createdAt).toLocaleTimeString() + ')\n';
-      }
-    }
-
-    const systemPrompt = 'You are a developer productivity assistant. Summarize today\'s GitHub activity.\n' +
-      'Provide a concise overview organized by repository. Highlight:\n' +
-      '- PRs opened/merged and their significance\n' +
-      '- Pipeline failures that need attention\n' +
-      '- New releases\n' +
-      '- Who was most active\n' +
-      '- Any notable patterns or concerns\n\n' +
-      this.lang() + '\n\n' +
-      'Keep it under 400 words. Use plain text with clear sections.';
-
-    const finalPrompt = userPrompt
-      ? systemPrompt + '\n\nUser\'s additional request: ' + userPrompt + '\n\nToday\'s events:\n' + eventsText
-      : systemPrompt + '\n\nToday\'s events:\n' + eventsText;
-
-    try {
-      const cts = new vscode.CancellationTokenSource();
-      const req = await model.sendRequest(
-        [vscode.LanguageModelChatMessage.User(finalPrompt)],
-        {},
-        cts.token
-      );
-      let result = '';
-      for await (const chunk of req.text) { result += chunk; }
-      return result.trim() || 'No summary generated.';
-    } catch {
-      return 'Failed to generate summary. Copilot may be unavailable.';
-    }
-  }
-
-  // ── AI-7: Per-PR full-context summary (returns text for a single PR) ───
-
-  /**
-   * Fetch full PR context (title, description, commits, diff, files)
-   * from the GitHub API and generate an AI summary for this one PR.
-   * Used by the Today Summary tree view for per-PR breakdown.
-   */
-  async generatePRSummary(
-    event: TrackedEvent,
-    client: GitHubClient,
-    userPrompt: string
-  ): Promise<{ summary: string; headBranch: string; baseBranch: string }> {
-    const model = await this.getModel();
-    if (!model) {
-      return {
-        summary: 'AI không kh\u1EA3 d\u1EE5ng (Copilot ch\u01B0a \u0111\u01B0\u1EE3c cài \u0111\u1EB7t ho\u1EB7c \u0111\u0103ng nh\u1EADp).',
-        headBranch: '',
-        baseBranch: '',
-      };
-    }
-
-    // Extract PR number from the event URL
     const prMatch = event.url.match(/\/pull\/(\d+)/);
     const prNumber = prMatch ? parseInt(prMatch[1], 10) : null;
     if (!prNumber) {
-      return {
-        summary: 'Không th\u1EC3 xác \u0111\u1ECBnh s\u1ED1 PR t\u1EEB s\u1EF1 ki\u1EC7n.',
-        headBranch: '',
-        baseBranch: '',
-      };
+      vscode.window.showWarningMessage('GH Tracker: Cannot determine PR number from this event.');
+      return;
     }
 
-    // Gather full context
+    const output = vscode.window.createOutputChannel('GH Tracker — AI Review');
+    output.show(true);
+    output.appendLine('=== AI Pull Request Review ===\n');
+    output.appendLine('PR #' + prNumber + ' | ' + event.repo + ' | Requested by ' + event.actor + '\n');
+
+    // Gather full PR context
     let contextParts: string[] = [];
-    let headBranch = '';
-    let baseBranch = '';
 
     try {
       const details = await client.getPRDetails(event.repo, prNumber);
-      headBranch = details.headline;
-      baseBranch = details.baseBranch;
       contextParts.push('## Pull Request Information');
       contextParts.push('Title: ' + details.title);
       contextParts.push('Description: ' + (details.body || '(none)'));
       contextParts.push('State: ' + details.state + ' | Merged: ' + details.merged);
-      contextParts.push('Head branch: ' + headBranch + ' | Base branch: ' + baseBranch);
+      contextParts.push('Branch: ' + details.headline + ' → ' + details.baseBranch);
       contextParts.push('Files changed: ' + details.changedFiles + ' (+' + details.additions + '/-' + details.deletions + ')');
-
       if (details.commits.length > 0) {
         contextParts.push('\n## Commits');
         for (const c of details.commits) {
           contextParts.push('  ' + c.sha + ' ' + c.message + ' (' + c.author + ')');
         }
       }
-    } catch {}
-    
-    // Fetch diff
+    } catch (err: any) {
+      contextParts.push('(Failed to fetch PR details: ' + err.message + ')');
+    }
+
+    // Fetch diff files
     try {
       const files = await client.getPRFiles(event.repo, prNumber);
       if (files.length > 0) {
         contextParts.push('\n## Files Changed & Diff');
-        for (const f of files.slice(0, 10)) {
+        for (const f of files.slice(0, 15)) {
           const stats = (f.additions != null) ? ' (+' + f.additions + '/-' + f.deletions + ')' : '';
           contextParts.push('  ' + (f.status || 'modified') + ' ' + f.filename + stats);
         }
         let diffText = '';
-        for (const f of files.slice(0, 5)) {
+        for (const f of files.slice(0, 8)) {
           const patch = f.patch || '';
-          diffText += '\n--- ' + f.filename + ' ---\n' + patch.slice(0, 800);
+          diffText += '\n--- ' + f.filename + ' ---\n' + patch.slice(0, 1200);
         }
         if (diffText) {
-          contextParts.push('\n### Diff Content\n' + diffText.slice(0, 6000));
+          contextParts.push('\n### Diff Content\n' + diffText.slice(0, 12000));
         }
       }
-    } catch {}
+    } catch { /* diff optional */ }
+
+    // Fetch issue/PR comments
+    try {
+      const comments = await client.getPRIssueComments(event.repo, prNumber);
+      if (comments.length > 0) {
+        contextParts.push('\n## PR Comments');
+        for (const c of comments.slice(0, 10)) {
+          contextParts.push('  ' + c.author + ' (' + new Date(c.createdAt).toLocaleDateString() + '): ' + c.body.slice(0, 300));
+        }
+      }
+    } catch { /* comments optional */ }
+
+    // Fetch review comments
+    try {
+      const reviewComments = await client.getPRReviewComments(event.repo, prNumber);
+      if (reviewComments.length > 0) {
+        contextParts.push('\n## Review Comments (inline)');
+        for (const c of reviewComments.slice(0, 10)) {
+          contextParts.push('  ' + c.author + ' on ' + c.path + ': ' + c.body.slice(0, 300));
+        }
+      }
+    } catch { /* review comments optional */ }
+
+    // Fetch PR reviews
+    try {
+      const reviews = await client.getPRReviews(event.repo, prNumber);
+      if (reviews.length > 0) {
+        contextParts.push('\n## PR Reviews');
+        for (const r of reviews.slice(0, 10)) {
+          contextParts.push('  ' + r.author + ' [' + r.state + '] ' + (r.body ? ': ' + r.body.slice(0, 300) : ''));
+        }
+      }
+    } catch { /* reviews optional */ }
 
     const fullContext = contextParts.join('\n');
 
-    const prompt = 'B\u1EA1n l\u00E0 tr\u1EE3 l\u00FD ph\u00E1t tri\u1EC3n ph\u1EA7n m\u1EC1m. H\u00E3y ph\u00E2n t\u00EDch Pull Request n\u00E0y m\u1ED9t c\u00E1ch chi ti\u1EBFt.\n\n' +
+    const prompt = 'You are a senior software engineer conducting a thorough code review.\n\n' +
       fullContext + '\n\n' +
-      'H\u00E3y cung c\u1EA5p:\n' +
-      '1. T\u1ED4NG QUAN: PR n\u00E0y l\u00E0m g\u00EC? T\u00F3m t\u1EAFt ng\u1EAFn g\u1ECDn.\n' +
-      '2. THAY \u0110\u1ED4I CH\u00CDNH: Nh\u1EEFng file n\u00E0o \u0111\u01B0\u1EE3c thay \u0111\u1ED5i v\u00E0 m\u1EE5c \u0111\u00EDch.\n' +
-      '3. \u0110\u00C1NH GI\u00C1: Ch\u1EA5t l\u01B0\u1EE3ng code, v\u1EA5n \u0111\u1EC1 b\u1EA3o m\u1EADt, hi\u1EC7u n\u0103ng n\u1EBFu c\u00F3.\n' +
-      '4. T\u00C1C \u0110\u1ED8NG: PR n\u00E0y \u1EA3nh h\u01B0\u1EDFng \u0111\u1EBFn ai\/h\u1EC7 th\u1ED1ng n\u00E0o.\n\n' +
-      this.lang() + '\n\n' +
-      (userPrompt ? 'Y\u00EAu c\u1EA7u b\u1ED5 sung: ' + userPrompt + '\n\n' : '');
+      'Based on the PR information above, provide a comprehensive code review:\n\n' +
+      '## OVERVIEW\nWhat does this PR do? Summarize the changes in 2-3 sentences.\n\n' +
+      '## CODE QUALITY\n- Any logic errors, bugs, or edge cases missed?\n- Error handling gaps?\n- Code clarity and maintainability issues?\n\n' +
+      '## SECURITY\n- Any injection risks, auth issues, or data exposure?\n- Unsafe operations?\n\n' +
+      '## PERFORMANCE\n- Inefficient queries, large payloads, unnecessary allocations?\n\n' +
+      '## SPECIFIC FEEDBACK\n- For each key file changed, call out specific lines or patterns.\n- Reference comments/reviews from other reviewers and whether you agree.\n\n' +
+      '## RECOMMENDATION\n- APPROVE / REQUEST CHANGES / COMMENT with brief justification.\n\n' +
+      'Be specific and actionable. Reference exact filenames and patterns. Skip style nitpicks.\n\n' +
+      'Write your response in English.\n\n---\nContext:\n' + fullContext;
 
     try {
       const cts = new vscode.CancellationTokenSource();
@@ -507,11 +446,13 @@ Reply with ONLY a single digit 1-5.`;
         {},
         cts.token
       );
-      let result = '';
-      for await (const chunk of req.text) { result += chunk; }
-      return { summary: result.trim() || '(không có nội dung tóm tắt)', headBranch, baseBranch };
+      output.appendLine('\u2500'.repeat(60));
+      for await (const chunk of req.text) {
+        output.append(chunk);
+      }
+      output.appendLine('\n\n=== End of AI Review ===');
     } catch (err: any) {
-      return { summary: 'Lỗi khi tạo tóm tắt: ' + err.message, headBranch, baseBranch };
+      output.appendLine('\nError: ' + err.message);
     }
   }
 }

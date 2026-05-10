@@ -14,7 +14,7 @@ export class ConfigService {
       aiEnabled:           cfg.get<boolean>('aiEnabled', false),
       maxEventsShown:      cfg.get<number>('maxEventsShown', 10),
       openIn:              cfg.get<'vscode'|'external'>('openIn', 'vscode'),
-      aiLanguage:          cfg.get<'vi'|'en'>('aiLanguage', 'vi'),
+      notifyFilterTypes:   cfg.get<string[]>('notifyFilterTypes', []),
     };
   }
 

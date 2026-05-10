@@ -1,10 +1,20 @@
 import * as vscode from 'vscode';
-import type { TrackedEvent } from '../types';
+import type { TrackedEvent, EventType } from '../types';
+import { ConfigService } from './configService';
 
 export class NotifyService {
   notify(events: TrackedEvent[]): void {
+    // Apply notification filter if configured
+    const cfg = ConfigService.get();
+    const filterTypes = cfg.notifyFilterTypes as EventType[];
+    const filtered = filterTypes.length > 0
+      ? events.filter(e => filterTypes.includes(e.type))
+      : events;
+
+    if (filtered.length === 0) return;
+
     // Sort oldest-first so the newest toast notification appears last
-    const sorted = [...events].sort(
+    const sorted = [...filtered].sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
     for (const event of sorted) {

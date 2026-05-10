@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ConfigService } from './services/configService';
 import { AuthService } from './services/authService';
-import type { TrackedEvent } from './types';
+import type { TrackedEvent, EventType } from './types';
 import { GitHubClient } from './services/githubClient';
 import { PollService } from './services/pollService';
 import { NotifyService } from './services/notifyService';
@@ -10,7 +10,6 @@ import { EventStore } from './storage/eventStore';
 import { RepoTreeProvider } from './providers/repoTreeProvider';
 import { EventTreeProvider } from './providers/eventTreeProvider';
 import { SearchTreeProvider } from './providers/searchTreeProvider';
-import { SummaryTreeProvider } from './providers/summaryTreeProvider';
 import { SetupPanel } from './webviews/setupPanel';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -26,7 +25,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let notifyService: NotifyService | undefined;
   let client: GitHubClient | undefined;
   let searchProvider: SearchTreeProvider | undefined;
-  let summaryProvider: SummaryTreeProvider | undefined;
 
   try {
     store = new EventStore(context.globalStorageUri.fsPath);
@@ -43,13 +41,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   repoProvider = new RepoTreeProvider(store!, cfg.repositories);
   eventProvider = new EventTreeProvider(store!, cfg.maxEventsShown);
   searchProvider = new SearchTreeProvider();
-  summaryProvider = new SummaryTreeProvider();
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('ghTracker.repos', repoProvider),
     vscode.window.registerTreeDataProvider('ghTracker.events', eventProvider),
     vscode.window.registerTreeDataProvider('ghTracker.search', searchProvider),
-    vscode.window.registerTreeDataProvider('ghTracker.summary', summaryProvider),
   );
 
   // ── 2. GitHubClient factory (re-created when settings change) ────────────────
@@ -163,14 +159,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       repoProvider.refresh();
     }),
 
-    vscode.commands.registerCommand('ghTracker.aiReview', async (item) => {
-      if (!item?.event || !client || !aiService) { return; }
-      const prMatch = item.event.url.match(/\/pull\/(\d+)/);
-      if (!prMatch) { return; }
-      const files = await client.getPRFiles(item.event.repo, parseInt(prMatch[1], 10));
-      await aiService.reviewPR(item.event, files, client);
-    }),
-
     vscode.commands.registerCommand('ghTracker.markRead', (item) => {
       if (!item?.nameWithOwner || !store || !repoProvider || !eventProvider) { return; }
       store.markAllRead(item.nameWithOwner);
@@ -192,6 +180,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('ghTracker.aiInvestigate', async (item) => {
       if (!item?.event || !client || !aiService) { return; }
       await aiService.investigateFailure(item.event, client);
+    }),
+
+    vscode.commands.registerCommand('ghTracker.aiReview', async (item) => {
+      if (!item?.event || !client || !aiService) {
+        vscode.window.showErrorMessage('GH Tracker: No event selected or AI unavailable');
+        return;
+      }
+      await aiService.reviewPR(item.event, client);
     }),
 
     vscode.commands.registerCommand('ghTracker.aiSearch', async () => {
@@ -219,108 +215,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
     }),
 
-    vscode.commands.registerCommand('ghTracker.aiSummary', async () => {
-      if (!store || !aiService || !summaryProvider) {
-        vscode.window.showErrorMessage('GH Tracker: Storage or AI unavailable');
-        return;
-      }
-      if (!client) {
-        vscode.window.showErrorMessage('GH Tracker: GitHub client not available. Open Settings to configure.');
-        return;
-      }
+    vscode.commands.registerCommand('ghTracker.setNotifyFilter', async () => {
+      // Read current filter
+      const cfg = ConfigService.get();
+      const currentFilter = cfg.notifyFilterTypes;
 
-      // Show the Summary view first
-      await vscode.commands.executeCommand('workbench.view.extension.ghTracker');
+      // Build quick-pick items for all event types
+      const ALL_EVENT_TYPES: EventType[] = [
+        'pr_opened', 'pr_closed', 'pr_merged', 'pr_review', 'pr_comment',
+        'issue_comment', 'pr_ready', 'push', 'workflow_failed', 'workflow_passed',
+        'review_requested', 'label_changed', 'branch_created', 'branch_deleted',
+        'release_published', 'issue_opened', 'issue_closed', 'fork', 'watch', 'unknown',
+      ];
 
-      // Prompt for custom instruction (pre-filled with cached value)
-      const cachedPrompt = context.workspaceState.get<string>('summaryPrompt', '');
-      const userPrompt = await vscode.window.showInputBox({
-        prompt: 'Nh\u1EADp y\u00EAu c\u1EA7u t\u00F9y ch\u1EC9nh cho AI (\u0111\u1EC3 tr\u1ED1ng n\u1EBFu kh\u00F4ng c\u00F3)',
-        placeHolder: 'V\u00ED d\u1EE5: T\u1EADp trung v\u00E0o pipeline failures v\u00E0 PR c\u1EA7n review',
-        value: cachedPrompt,
+      const items = ALL_EVENT_TYPES.map(type => ({
+        label: type,
+        picked: currentFilter.length === 0 || currentFilter.includes(type),
+        description: currentFilter.length === 0 || currentFilter.includes(type) ? '(notifying)' : '(muted)',
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Select event types to notify (deselect to mute)',
+        title: 'GH Tracker: Notification Filter',
         ignoreFocusOut: true,
       });
-      if (userPrompt === undefined) return; // Escape = cancel
-      await context.workspaceState.update('summaryPrompt', userPrompt);
 
-      await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: 'GH Tracker: \u0110ang t\u1EA1o b\u00E1o c\u00E1o h\u00F4m nay...',
-      }, async (progress) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString();
-        const allEvents = store!.getAllEvents();
-        const todayEvents = allEvents.filter(e => e.createdAt >= todayStr);
+      if (!selected) return; // user cancelled
 
-        if (todayEvents.length === 0) {
-          summaryProvider!.setData([]);
-          return;
-        }
+      // Save: selected items become the filter; if all selected = empty (notify all)
+      const selectedTypes = selected.map(s => s.label);
+      const allSelected = ALL_EVENT_TYPES.every(t => selectedTypes.includes(t));
+      const newFilter = allSelected ? [] : selectedTypes;
 
-        // Group by repo: separate PR events from non-PR events
-        const byRepo = new Map<string, { prEvents: TrackedEvent[]; otherEvents: TrackedEvent[] }>();
-        for (const e of todayEvents) {
-          const entry = byRepo.get(e.repo) ?? { prEvents: [], otherEvents: [] };
-          if (e.type.startsWith('pr_') || e.url.includes('/pull/')) {
-            entry.prEvents.push(e);
-          } else {
-            entry.otherEvents.push(e);
-          }
-          byRepo.set(e.repo, entry);
-        }
+      const section = vscode.workspace.getConfiguration(ConfigService.SECTION);
+      await section.update('notifyFilterTypes', newFilter, vscode.ConfigurationTarget.Global);
 
-        // Process each repo: generate per-PR AI summaries with full context
-        const repos: import('./providers/summaryTreeProvider').RepoSummaryData[] = [];
-
-        for (const [repo, group] of byRepo) {
-          const prSummaries: import('./providers/summaryTreeProvider').PRSummaryData[] = [];
-          const seenPRs = new Set<number>();
-          // Map: branch → PR number (for enriching push events)
-          const branchToPR = new Map<string, number>();
-
-          for (const prEvent of group.prEvents) {
-            const prMatch = prEvent.url.match(/\/pull\/(\d+)/);
-            if (!prMatch) continue;
-            const prNum = parseInt(prMatch[1], 10);
-            if (seenPRs.has(prNum)) continue;
-            seenPRs.add(prNum);
-
-            progress.report({ message: 'Ph\u00E2n t\u00EDch PR #' + prNum + ' (' + repo + ')...' });
-
-            const result = await aiService!.generatePRSummary(prEvent, client!, userPrompt);
-
-            // Map the PR's head branch for push event enrichment
-            if (result.headBranch) {
-              branchToPR.set(result.headBranch, prNum);
-            }
-
-            // Derive a clean PR title from the event title
-            const cleanTitle = prEvent.title.replace(/^.+\b(PR\s*#\d+\s*:\s*)/i, '').trim() || prEvent.title;
-
-            prSummaries.push({
-              prNumber: prNum,
-              prTitle: cleanTitle,
-              summary: result.summary,
-            });
-          }
-
-          // Enrich push events: match branch to known PR number
-          const pushPRMap = new Map<string, number>();
-          for (const ev of group.otherEvents) {
-            if (ev.type !== 'push') continue;
-            const payload = ev.payload as any;
-            const branch = (payload?.ref as string)?.replace('refs/heads/', '') ?? '';
-            if (branch && branchToPR.has(branch)) {
-              pushPRMap.set(ev.id, branchToPR.get(branch)!);
-            }
-          }
-
-          repos.push({ repo, prSummaries, otherEvents: group.otherEvents, pushPRMap });
-        }
-
-        summaryProvider!.setData(repos);
-      });
+      const count = newFilter.length;
+      if (count === 0) {
+        vscode.window.showInformationMessage('GH Tracker: Notifying all event types');
+      } else {
+        vscode.window.showInformationMessage(`GH Tracker: Notifying ${count} event type(s)`);
+      }
     }),
 
     // Restart polling when settings change
