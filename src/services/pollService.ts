@@ -56,12 +56,14 @@ export class PollService {
         const events  = await this.client.getNewEvents(repo, lastId);
 
         if (events.length > 0) {
-          this.store.insertMany(events);
-          // Filter to genuinely new events — workflow runs fetched inside
-          // getNewEvents bypass the "since last event" filter and can include
-          // already-seen events on every poll.
+          // Filter to genuinely new events BEFORE inserting into the store.
+          // Workflow runs fetched inside getNewEvents bypass the "since last
+          // event" filter and can include already-seen events on every poll.
           const genuinelyNew = this.store.filterNew(events);
-          allNew.push(...genuinelyNew);
+          if (genuinelyNew.length > 0) {
+            this.store.insertMany(genuinelyNew);
+            allNew.push(...genuinelyNew);
+          }
         }
       } catch (err) {
         // Log but don't crash the whole poll cycle
