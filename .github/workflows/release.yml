@@ -21,10 +21,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type check
+        run: npx tsc --noEmit
+
       - name: Package VSIX (RELEASE)
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          npm run package -o "gh-tracker-${VERSION}-RELEASE.vsix"
+          npx vsce package -o "gh-tracker-${VERSION}-RELEASE.vsix"
 
       - name: Upload Release Asset
         run: |

@@ -34,7 +34,7 @@ export class SetupPanel {
     // Listen for messages sent from the webview JavaScript
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.command === 'save') {
-        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds } = msg.data;
+        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, openIn } = msg.data;
 
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
@@ -44,6 +44,7 @@ export class SetupPanel {
           c.update('repositories',        repositories,        globalTarget),
           c.update('aiEnabled',           aiEnabled,           globalTarget),
           c.update('pollIntervalSeconds', pollIntervalSeconds, globalTarget),
+          c.update('openIn',              openIn,              globalTarget),
         ]);
 
         vscode.window.showInformationMessage('GH Tracker: Settings saved!');
@@ -120,7 +121,11 @@ export class SetupPanel {
   <label for="pollInterval">Poll interval (seconds)</label>
   <input id="pollInterval" type="number" min="30" value="${cfg.pollIntervalSeconds}" />
 
-
+  <label for="openIn">Open events in</label>
+  <select id="openIn">
+    <option value="vscode"   ${cfg.openIn === 'vscode'   ? 'selected' : ''}>VSCode Simple Browser</option>
+    <option value="external" ${cfg.openIn === 'external' ? 'selected' : ''}>External Browser</option>
+  </select>
 
   <div class="toggle-row">
     <input type="checkbox" id="aiEnabled" ${cfg.aiEnabled ? 'checked' : ''} style="width:auto">
@@ -140,6 +145,7 @@ export class SetupPanel {
           repositories:        document.getElementById('repos').value.split('\n').map(s => s.trim()).filter(Boolean),
           pollIntervalSeconds: parseInt(document.getElementById('pollInterval').value, 10),
           aiEnabled:           document.getElementById('aiEnabled').checked,
+          openIn:              document.getElementById('openIn').value,
         }
       });
     }

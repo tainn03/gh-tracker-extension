@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { TrackedEvent, EventType } from '../types';
+import type { TrackedEvent } from '../types';
 import { ConfigService } from './configService';
 
 export class NotifyService {
@@ -11,7 +11,8 @@ export class NotifyService {
     const hasActors = filter.actors.length > 0;
     let filtered = events;
     if (hasTypes) {
-      filtered = filtered.filter(e => (filter.eventTypes as EventType[]).includes(e.type));
+      const typeSet = new Set(filter.eventTypes);
+      filtered = filtered.filter(e => typeSet.has(e.type));
     }
     if (hasActors) {
       filtered = filtered.filter(e => filter.actors.includes(e.actor));

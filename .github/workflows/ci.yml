@@ -21,10 +21,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type check
+        run: npx tsc --noEmit
+
       - name: Package VSIX (SNAPSHOT)
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          npm run package -o "gh-tracker-${VERSION}-SNAPSHOT.vsix"
+          npx vsce package -o "gh-tracker-${VERSION}-SNAPSHOT.vsix"
 
       - uses: actions/upload-artifact@v4
         with:

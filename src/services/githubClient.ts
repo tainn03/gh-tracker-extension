@@ -92,13 +92,11 @@ export class GitHubClient {
       // Workflow runs are best-effort
     }
 
-    // Enrich only new events with full detail from GitHub API (PR diff, commit diff, etc.)
-    // NOTE: workflow events from Actions API use a different payload structure;
-    //       enrichEvent handles them via the 'workflow_failed'/'workflow_passed' branch
-    //       which reads payload.workflow_run.
-    for (const evt of newEvents) {
-      await this.enrichEvent(evt, nameWithOwner);
-    }
+    // NOTE: Enrichment is intentionally NOT done here during polling to avoid
+    //       excessive API calls (3–8 per event) which can exhaust the 5000 req/hour
+    //       GitHub rate limit.  Raw event data is stored as-is; AI features
+    //       (summarize, review, investigate) fetch details on-demand via the
+    //       public enrichEvent() method or direct API calls in aiService.ts.
 
     return newEvents;
   }
@@ -200,7 +198,12 @@ export class GitHubClient {
    * Fetches PR details, commit diffs, workflow logs, etc. depending on event type.
    * Stores the result as JSON in evt.rawData.
    */
-  private async enrichEvent(evt: TrackedEvent, nameWithOwner: string): Promise<void> {
+  /**
+   * Fetch full detail from the GitHub API and attach it to the event as rawData.
+   * Called on-demand by AI commands (summarise, review), NOT during polling.
+   * This pattern avoids 3–8 API calls per event at ingest time.
+   */
+  async enrichEvent(evt: TrackedEvent, nameWithOwner: string): Promise<void> {
     const [owner, repo] = nameWithOwner.split('/');
     const payload = evt.payload as any;
 
@@ -444,6 +447,9 @@ export class GitHubClient {
    * Uses the compare API to get the combined diff between two commits.
    */
   async getPushDiff(nameWithOwner: string, before: string, head: string): Promise<string> {
+    // New branch — no meaningful diff (GitHub returns "0000...")
+    if (/^0+$/.test(before)) { return ''; }
+
     const [owner, repo] = nameWithOwner.split('/');
     try {
       const { data } = await this.octokit.repos.compareCommits({

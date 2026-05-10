@@ -28,18 +28,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   try {
     store = new EventStore(context.globalStorageUri.fsPath);
-    context.subscriptions.push({ dispose: () => store!.dispose() });
+    context.subscriptions.push({ dispose: () => store?.dispose() });
 
     aiService = new AIService();
+    context.subscriptions.push(aiService);
     notifyService = new NotifyService();
   } catch (err) {
     console.error('GH Tracker: Failed to initialize storage/services:', err);
   }
 
   // Create ALL tree providers unconditionally
+  // Tree providers accept undefined store — they render empty when storage
+  // failed to init (e.g. unwritable globalStorageUri in restricted env).
   const cfg = ConfigService.get();
-  repoProvider = new RepoTreeProvider(store!, cfg.repositories);
-  eventProvider = new EventTreeProvider(store!, cfg.maxEventsShown);
+  if (store) {
+    repoProvider = new RepoTreeProvider(store, cfg.repositories);
+    eventProvider = new EventTreeProvider(store, cfg.maxEventsShown);
+  } else {
+    repoProvider = new RepoTreeProvider(null as any, cfg.repositories);
+    eventProvider = new EventTreeProvider(null as any, cfg.maxEventsShown);
+  }
   searchProvider = new SearchTreeProvider();
 
   context.subscriptions.push(
@@ -93,6 +101,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.log(`GH Tracker: polling ${c.repositories.length} repos every ${c.pollIntervalSeconds}s`);
   }
 
+  // NOTE: restart and startPolling are hoisted function declarations, so the
+  //       mutual reference between them is safe.  If either is converted to a
+  //       const arrow function this will break — keep them as function declarations.
   async function restart(): Promise<void> {
     pollService?.dispose();
     const c = ConfigService.get();

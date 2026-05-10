@@ -48,10 +48,7 @@ Now install the specific dependencies this extension needs:
 
 ```bash
 # ▶  Runtime dependencies
-npm install @octokit/rest @octokit/plugin-throttling better-sqlite3
-
-# ▶  Type definitions (dev only)
-npm install -D @types/better-sqlite3
+npm install @octokit/rest @octokit/plugin-throttling
 ```
 
 > **Why `@octokit/plugin-throttling`?**  GitHub's API enforces rate limits.
@@ -60,8 +57,8 @@ npm install -D @types/better-sqlite3
 
 ```bash
 # ✓ verify the install worked
-ls node_modules/@octokit && ls node_modules/better-sqlite3
-# You should see both directories without errors
+ls node_modules/@octokit
+# You should see the directory without errors
 ```
 
 ---
@@ -700,154 +697,192 @@ export function normalizeEvent(raw: any, repo: string): TrackedEvent {
 
 ---
 
-## Step 9 — Event store (SQLite persistence)
+## Step 9 — Event store (JSON persistence)
 
-`better-sqlite3` is a synchronous SQLite driver. That might sound alarming, but it's
-actually fine inside a VSCode extension host because the extension host runs in its own
-Node.js process (separate from the renderer), so blocking it briefly doesn't freeze the UI.
-All your TypeScript runs here, never in the browser renderer.
+The extension uses a plain JSON file for event storage rather than SQLite.
+`better-sqlite3` is a native Node addon compiled against the system Node ABI, but
+VSCode runs inside Electron (a different Node ABI), so native `.node` binaries fail
+to load in the extension host. A JSON file is simpler, needs zero native
+dependencies, and is fast enough for hundreds-to-low-thousands of events.
+
+The store deduplicates by `id`, keeps events sorted newest-first, and uses a
+debounced write (2 s interval) to avoid disk thrashing during rapid poll cycles.
+Events older than 30 days are pruned automatically on insert.
 
 ```typescript
 // src/storage/eventStore.ts
-import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { TrackedEvent } from '../types';
 
+/**
+ * JSON-file-backed event store.
+ *
+ * `better-sqlite3` is a native Node addon compiled against the system Node ABI.
+ * VSCode runs inside Electron (different Node ABI), so native `.node` binaries
+ * fail to load in the extension host.  A JSON file is simpler, needs zero native
+ * dependencies, and is fast enough for hundreds-to-low-thousands of events.
+ */
 export class EventStore {
-  private db: Database.Database;
+  private events: TrackedEvent[] = [];
+  private readonly filePath: string;
+  private dirty = false;
+  private flushTimer: NodeJS.Timeout | undefined;
 
   constructor(storagePath: string) {
     // storagePath is context.globalStorageUri.fsPath
-    // Create the directory if it doesn't exist yet
     fs.mkdirSync(storagePath, { recursive: true });
-
-    const dbPath = path.join(storagePath, 'events.db');
-    this.db = new Database(dbPath);
-
-    // WAL mode = much faster writes, safe for concurrent reads
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-
-    this.migrate();
+    this.filePath = path.join(storagePath, 'events.json');
+    this.load();
   }
 
-  /** Idempotent schema creation — safe to call on every startup */
-  private migrate(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS events (
-        id          TEXT PRIMARY KEY,
-        repo        TEXT NOT NULL,
-        type        TEXT NOT NULL,
-        actor       TEXT NOT NULL,
-        title       TEXT NOT NULL,
-        url         TEXT NOT NULL,
-        seen        INTEGER NOT NULL DEFAULT 0,
-        payload     TEXT NOT NULL,
-        created_at  TEXT NOT NULL
-      );
+  // ── Persistence ────────────────────────────────────────────────────────
 
-      CREATE INDEX IF NOT EXISTS idx_events_repo       ON events (repo);
-      CREATE INDEX IF NOT EXISTS idx_events_created    ON events (created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_events_seen       ON events (seen);
-
-      -- Auto-cleanup: delete events older than 30 days
-      DELETE FROM events WHERE created_at < datetime('now', '-30 days');
-    `);
+  private load(): void {
+    try {
+      const raw = fs.readFileSync(this.filePath, 'utf-8');
+      this.events = JSON.parse(raw);
+    } catch {
+      this.events = [];
+    }
   }
 
-  /** Insert multiple new events in a single transaction (much faster than one-by-one) */
-  insertMany(events: TrackedEvent[]): void {
-    const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO events (id, repo, type, actor, title, url, seen, payload, created_at)
-      VALUES (@id, @repo, @type, @actor, @title, @url, @seen, @payload, @created_at)
-    `);
-
-    // Wrapping multiple inserts in a transaction is the single biggest SQLite performance trick
-    const insertAll = this.db.transaction((evts: TrackedEvent[]) => {
-      for (const e of evts) {
-        insert.run({
-          id:         e.id,
-          repo:       e.repo,
-          type:       e.type,
-          actor:      e.actor,
-          title:      e.title,
-          url:        e.url,
-          seen:       e.seen ? 1 : 0,
-          payload:    JSON.stringify(e.payload),
-          created_at: e.createdAt,
-        });
+  /**
+   * Debounced save — writes at most once per 2 s so rapid insertMany calls
+   * don't thrash the disk.
+   */
+  private scheduleFlush(): void {
+    this.dirty = true;
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined;
+      if (this.dirty) {
+        this.dirty = false;
+        try {
+          fs.writeFileSync(this.filePath, JSON.stringify(this.events));
+        } catch (err) {
+          console.error('GH Tracker: Failed to persist events', err);
+        }
       }
-    });
-
-    insertAll(events);
+    }, 2000);
   }
 
-  /** Get the most recent N events for a repo, sorted newest-first */
-  getEventsForRepo(repo: string, limit = 10): TrackedEvent[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM events
-      WHERE repo = ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(repo, limit) as any[];
+  // ── Public API ─────────────────────────────────────────────────────────
 
-    return rows.map(row => ({
-      id:        row.id,
-      repo:      row.repo,
-      type:      row.type,
-      actor:     row.actor,
-      title:     row.title,
-      url:       row.url,
-      seen:      row.seen === 1,
-      payload:   JSON.parse(row.payload),
-      createdAt: row.created_at,
-    }));
+  /** Insert events that don't already exist (dedup by id). */
+  insertMany(newEvents: TrackedEvent[]): void {
+    if (newEvents.length === 0) return;
+
+    const existing = new Set(this.events.map(e => e.id));
+    let inserted = 0;
+
+    for (const evt of newEvents) {
+      if (!existing.has(evt.id)) {
+        this.events.push(evt);
+        existing.add(evt.id);
+        inserted++;
+      }
+    }
+
+    if (inserted === 0) return;
+
+    // Keep newest-first for efficient LIMIT queries
+    this.events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Auto-cleanup: drop events older than 30 days
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    this.events = this.events.filter(e => new Date(e.createdAt).getTime() >= cutoff);
+
+    this.scheduleFlush();
   }
 
-  /** Get the ID of the most recent event for a repo — used to find "new since last poll" */
+  /** Get all stored events (for search/analysis). */
+  getAllEvents(): TrackedEvent[] {
+    return [...this.events];
+  }
+
+  /** Get the most recent N events for a repo. */
+  getEventsForRepo(repo: string, limit = 30): TrackedEvent[] {
+    const results: TrackedEvent[] = [];
+    for (const e of this.events) {
+      if (e.repo === repo) {
+        results.push(e);
+        if (results.length >= limit) break;
+      }
+    }
+    return results;
+  }
+
+  /** Get the ID of the most recent event for a repo. */
   getLatestEventId(repo: string): string | undefined {
-    const row = this.db.prepare(`
-      SELECT id FROM events WHERE repo = ? ORDER BY created_at DESC LIMIT 1
-    `).get(repo) as { id: string } | undefined;
-    return row?.id;
+    for (const e of this.events) {
+      if (e.repo === repo) return e.id;
+    }
+    return undefined;
   }
 
-  /** Count unread events per repo */
+  /** Count unread events for a repo. */
   getUnreadCount(repo: string): number {
-    const row = this.db.prepare(`
-      SELECT COUNT(*) as count FROM events WHERE repo = ? AND seen = 0
-    `).get(repo) as { count: number };
-    return row.count;
+    let count = 0;
+    for (const e of this.events) {
+      if (e.repo === repo && !e.seen) count++;
+    }
+    return count;
   }
 
   /** Does the repo have any unread workflow failures? */
   hasUnreadFailure(repo: string): boolean {
-    const row = this.db.prepare(`
-      SELECT 1 FROM events
-      WHERE repo = ? AND type = 'workflow_failed' AND seen = 0
-      LIMIT 1
-    `).get(repo);
-    return !!row;
+    for (const e of this.events) {
+      if (e.repo === repo && e.type === 'workflow_failed' && !e.seen) return true;
+    }
+    return false;
   }
 
+  /** Mark all events for a repo as seen. */
   markAllRead(repo: string): void {
-    this.db.prepare(`UPDATE events SET seen = 1 WHERE repo = ?`).run(repo);
+    let changed = false;
+    for (const e of this.events) {
+      if (e.repo === repo && !e.seen) {
+        e.seen = true;
+        changed = true;
+      }
+    }
+    if (changed) this.scheduleFlush();
   }
 
+  /** Mark a single event as seen. */
   markEventRead(id: string): void {
-    this.db.prepare(`UPDATE events SET seen = 1 WHERE id = ?`).run(id);
+    for (const e of this.events) {
+      if (e.id === id && !e.seen) {
+        e.seen = true;
+        this.scheduleFlush();
+        break;
+      }
+    }
   }
 
   dispose(): void {
-    this.db.close();
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
+    }
+    // Flush any pending writes
+    if (this.dirty) {
+      try {
+        fs.writeFileSync(this.filePath, JSON.stringify(this.events));
+      } catch (err) {
+        console.error('GH Tracker: Failed to flush events on dispose', err);
+      }
+      this.dirty = false;
+    }
   }
 }
 ```
 
 ```bash
-# ✓ verify better-sqlite3 compiles for your Node version
-node -e "require('better-sqlite3')" && echo "SQLite OK"
+# ✓ verify the store directory is created (run after first launch)
+ls ~/.config/Code/User/globalStorage/your-publisher-id.gh-tracker/
+# Expected: events.json
 ```
 
 ---
@@ -1674,7 +1709,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   // VSCode automatically disposes everything in context.subscriptions.
-  // SQLite close is handled via the store's dispose registered above.
+  // JSON store flush is handled via the store's dispose registered above.
   console.log('GH Tracker: deactivated');
 }
 ```
@@ -1683,8 +1718,8 @@ export function deactivate(): void {
 
 ## Step 16 — Webpack config
 
-Because `better-sqlite3` is a native Node addon (`.node` file), you must tell webpack
-to treat it as an external. It can't be bundled — it must be shipped alongside the extension.
+The extension uses no native Node addons (storage is JSON-file-backed), so the
+webpack config is straightforward — only `vscode` needs to be externalised.
 
 ```javascript
 // webpack.config.js
@@ -1704,7 +1739,6 @@ module.exports = {
 
   externals: {
     vscode:           'commonjs vscode',  // provided by VSCode at runtime
-    'better-sqlite3': 'commonjs better-sqlite3',  // native addon — can't bundle
   },
 
   resolve: { extensions: ['.ts', '.js'] },
@@ -1713,13 +1747,6 @@ module.exports = {
     rules: [{ test: /\.ts$/, use: 'ts-loader', exclude: /node_modules/ }],
   },
 };
-```
-
-Because `better-sqlite3` is external, you need to copy it to `dist` before packaging:
-
-```bash
-# ▶  Add this postinstall / prebuild script or run manually
-cp -r node_modules/better-sqlite3 dist/node_modules/better-sqlite3
 ```
 
 ---
@@ -1747,9 +1774,9 @@ npm run watch
 ls -lh dist/extension.js
 # Expected: > 10KB
 
-# ✓ verify the SQLite DB is being created (run after first launch)
+# ✓ verify the event store is being created (run after first launch)
 ls ~/.config/Code/User/globalStorage/your-publisher-id.gh-tracker/
-# Expected: events.db
+# Expected: events.json
 ```
 
 ---
@@ -1802,7 +1829,7 @@ gh-tracker/
 │   │   ├── notifyService.ts       ← toast notifications
 │   │   └── aiService.ts           ← Copilot LM API
 │   ├── storage/
-│   │   └── eventStore.ts          ← SQLite persistence
+│   │   └── eventStore.ts          ← JSON file persistence
 │   ├── utils/
 │   │   └── eventNormalizer.ts     ← GitHub API → TrackedEvent
 │   └── webviews/

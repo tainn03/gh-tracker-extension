@@ -85,7 +85,7 @@ export class EventStore {
 
   /** Get all stored events (for search/analysis). */
   getAllEvents(): TrackedEvent[] {
-    return this.events;
+    return [...this.events];
   }
 
   /** Get the most recent N events for a repo. */

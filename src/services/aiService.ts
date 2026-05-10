@@ -2,7 +2,21 @@ import * as vscode from 'vscode';
 import type { TrackedEvent } from '../types';
 import type { GitHubClient } from './githubClient';
 
-export class AIService {
+export class AIService implements vscode.Disposable {
+  // Shared output channels — created once, reused across all calls.
+  // Previously each AI command created a new channel that leaked for the
+  // entire session.  VSCode renders every created channel in the Output
+  // dropdown, so they accumulated without bound.
+  private readonly summaryChannel  = vscode.window.createOutputChannel('GH Tracker — AI Summary');
+  private readonly reviewChannel   = vscode.window.createOutputChannel('GH Tracker — AI Review');
+  private readonly failureChannel  = vscode.window.createOutputChannel('GH Tracker — Failure Investigation');
+
+  dispose(): void {
+    this.summaryChannel.dispose();
+    this.reviewChannel.dispose();
+    this.failureChannel.dispose();
+  }
+
   /** Select the best available Copilot model. Falls back gracefully if unavailable. */
   private async getModel(): Promise<vscode.LanguageModelChat | undefined> {
     try {
@@ -16,34 +30,7 @@ export class AIService {
     }
   }
 
-  // ── AI-1: Notification scoring ─────────────────────────────────────────
-
-  async scoreEventUrgency(event: TrackedEvent, currentUser: string): Promise<number> {
-    const model = await this.getModel();
-    if (!model) { return 3; }
-
-    const prompt = `Score the urgency of this GitHub event for user "${currentUser}" from 1 (noise) to 5 (critical).
-Event: ${JSON.stringify({ type: event.type, title: event.title, actor: event.actor, repo: event.repo })}
-Rules: 5=pipeline failure or direct review request, 4=PR opened/merged, 3=new comment, 2=label change, 1=unknown
-Reply with ONLY a single digit 1-5.`;
-
-    try {
-      const cts = new vscode.CancellationTokenSource();
-      const req = await model.sendRequest(
-        [vscode.LanguageModelChatMessage.User(prompt)],
-        {},
-        cts.token
-      );
-      let result = '';
-      for await (const chunk of req.text) { result += chunk; }
-      const score = parseInt(result.trim(), 10);
-      return isNaN(score) ? 3 : Math.max(1, Math.min(5, score));
-    } catch {
-      return 3;
-    }
-  }
-
-  // ── AI-2: Summarize an event (output channel) ──────────────────────────
+  // ── AI-1: Summarize an event (output channel) ──────────────────────────
 
   async summarizeEvent(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
@@ -52,7 +39,8 @@ Reply with ONLY a single digit 1-5.`;
       return;
     }
 
-    const output = vscode.window.createOutputChannel('GH Tracker — AI Summary');
+    const output = this.summaryChannel;
+    output.clear();
     output.show(true);
     output.appendLine('=== AI Summary: ' + event.title + ' ===\n');
 
@@ -192,7 +180,7 @@ Reply with ONLY a single digit 1-5.`;
     }
   }
 
-  // ── AI-3: Investigate pipeline failure ─────────────────────────────────
+  // ── AI-2: Investigate pipeline failure ─────────────────────────────────
 
   async investigateFailure(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
@@ -201,7 +189,8 @@ Reply with ONLY a single digit 1-5.`;
       return;
     }
 
-    const output = vscode.window.createOutputChannel('GH Tracker — Failure Investigation');
+    const output = this.failureChannel;
+    output.clear();
     output.show(true);
     output.appendLine('=== Failure Investigation: ' + event.title + ' ===\n');
 
@@ -264,7 +253,7 @@ Reply with ONLY a single digit 1-5.`;
     }
   }
 
-  // ── AI-4: Semantic event search ────────────────────────────────────────
+  // ── AI-3: Semantic event search ────────────────────────────────────────
 
   async searchEvents(query: string, allEvents: TrackedEvent[]): Promise<Array<{ event: TrackedEvent; relevance: string }>> {
     if (!query.trim()) {
@@ -333,7 +322,7 @@ Reply with ONLY a single digit 1-5.`;
     return results.slice(0, 20);
   }
 
-  // ── AI-5: PR review (for review_requested events) ─────────────────────
+  // ── AI-4: PR review (for review_requested events) ─────────────────────
 
   async reviewPR(event: TrackedEvent, client: GitHubClient): Promise<void> {
     const model = await this.getModel();
@@ -349,7 +338,8 @@ Reply with ONLY a single digit 1-5.`;
       return;
     }
 
-    const output = vscode.window.createOutputChannel('GH Tracker — AI Review');
+    const output = this.reviewChannel;
+    output.clear();
     output.show(true);
     output.appendLine('=== AI Pull Request Review ===\n');
     output.appendLine('PR #' + prNumber + ' | ' + event.repo + ' | Requested by ' + event.actor + '\n');
