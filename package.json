@@ -1,0 +1,222 @@
+{
+  "name": "gh-tracker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ngtai/gh-tracker.git"
+  },
+  "displayName": "GitHub Enterprise Tracker",
+  "description": "Real-time event tracking for GitHub / GHE repositories",
+  "version": "1.0.1",
+  "publisher": "ngtai",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ghTracker",
+          "title": "GH Tracker",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ghTracker": [
+        {
+          "id": "ghTracker.repos",
+          "name": "Repositories",
+          "icon": "$(repo)"
+        },
+        {
+          "id": "ghTracker.events",
+          "name": "Events",
+          "icon": "$(bell)"
+        },
+        {
+          "id": "ghTracker.search",
+          "name": "Search"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ghTracker.setup",
+        "title": "GH Tracker: Open Setup"
+      },
+      {
+        "command": "ghTracker.refresh",
+        "title": "GH Tracker: Refresh Now",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghTracker.addRepo",
+        "title": "GH Tracker: Add Repository",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "ghTracker.removeRepo",
+        "title": "GH Tracker: Remove Repository"
+      },
+      {
+        "command": "ghTracker.markRead",
+        "title": "GH Tracker: Mark All Read"
+      },
+      {
+        "command": "ghTracker.showEvents",
+        "title": "GH Tracker: Show Events"
+      },
+      {
+        "command": "ghTracker.openEvent",
+        "title": "GH Tracker: Open Event"
+      },
+      {
+        "command": "ghTracker.openSettings",
+        "title": "GH Tracker: Open Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "ghTracker.aiSummarize",
+        "title": "GH Tracker: AI Summarize Event"
+      },
+      {
+        "command": "ghTracker.aiInvestigate",
+        "title": "GH Tracker: AI Investigate Failure"
+      },
+      {
+        "command": "ghTracker.aiSearch",
+        "title": "GH Tracker: AI Event Search",
+        "icon": "$(search)"
+      },
+      {
+        "command": "ghTracker.aiReview",
+        "title": "GH Tracker: AI Review PR"
+      },
+      {
+        "command": "ghTracker.setNotifyFilter",
+        "title": "GH Tracker: Filter Notifications...",
+        "icon": "$(filter)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "ghTracker.refresh",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.addRepo",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.openSettings",
+          "when": "view == ghTracker.repos",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.aiSearch",
+          "when": "view == ghTracker.search",
+          "group": "navigation"
+        },
+        {
+          "command": "ghTracker.setNotifyFilter",
+          "when": "view == ghTracker.events",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ghTracker.removeRepo",
+          "when": "view == ghTracker.repos && viewItem == repo"
+        },
+        {
+          "command": "ghTracker.aiSummarize",
+          "when": "view == ghTracker.events && (viewItem == event || viewItem == event_pr || viewItem == event_failure)"
+        },
+        {
+          "command": "ghTracker.aiInvestigate",
+          "when": "view == ghTracker.events && viewItem == event_failure"
+        },
+        {
+          "command": "ghTracker.aiReview",
+          "when": "view == ghTracker.events && viewItem == event_review_request"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "GitHub Enterprise Tracker",
+      "properties": {
+        "ghTracker.hostUrl": {
+          "type": "string",
+          "default": "https://github.com",
+          "description": "GitHub or GitHub Enterprise host URL (e.g. https://ghe.corp.co.jp)"
+        },
+        "ghTracker.repositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of repositories to track in org/repo format"
+        },
+        "ghTracker.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 30,
+          "description": "How often to poll for new events (seconds)"
+        },
+        "ghTracker.aiEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Copilot AI features (requires GitHub Copilot)"
+        },
+        "ghTracker.maxEventsShown": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum events shown per repository"
+        },
+        "ghTracker.openIn": {
+          "type": "string",
+          "enum": ["vscode", "external"],
+          "default": "vscode",
+          "description": "Open event links in VSCode Simple Browser or external browser"
+        },
+        "ghTracker.notifyFilterTypes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Event types that trigger notifications. Empty = notify all."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package:js",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package:js": "webpack --mode production --devtool hidden-source-map",
+    "package:vsix": "npx vsce package",
+    "package": "npm run package:js && npm run package:vsix",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@octokit/plugin-throttling": "^11.0.3",
+    "@octokit/rest": "^22.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/vscode": "^1.90.0",
+    "ts-loader": "^9.5.7",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^7.0.2"
+  }
+}

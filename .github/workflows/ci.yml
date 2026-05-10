@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Package VSIX (SNAPSHOT)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npm run package -o "gh-tracker-${VERSION}-SNAPSHOT.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gh-tracker-SNAPSHOT
+          path: "*.vsix"
