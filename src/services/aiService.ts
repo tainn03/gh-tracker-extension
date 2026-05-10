@@ -235,15 +235,18 @@ Reply with ONLY a single digit 1-5.`;
       return;
     }
 
-    output.appendLine('Log tail (last lines):\n' + logTail.slice(-500) + '\n');
+    const logLines = logTail.split('\n');
+
+    output.appendLine('Log tail:\n' + logLines + '\n');
 
     const prompt = 'A CI/CD pipeline failed. Analyze these log lines and provide:\n\n' +
       '1. ROOT CAUSE: What specifically caused the failure (one sentence)\n' +
       '2. IMPACT: What services/functionality is affected\n' +
       '3. FIX: Step-by-step to resolve the issue\n' +
       '4. PREVENTION: How to avoid this in the future\n\n' +
+      'Focus on the FIRST error or non-zero exit code in the logs — ignore informational footnotes (deprecation warnings, runner cleanup).\n\n' +
       'Format with clear headers. Be specific — reference actual error messages from the logs.\n\n' +
-      'Write your response in English.\n\nLog tail:\n' + logTail.slice(-2000);
+      'Write your response in English.\n\nLog tail:\n' + logLines;
 
     try {
       const cts = new vscode.CancellationTokenSource();

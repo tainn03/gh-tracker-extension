@@ -4,12 +4,18 @@ import { ConfigService } from './configService';
 
 export class NotifyService {
   notify(events: TrackedEvent[]): void {
-    // Apply notification filter if configured
     const cfg = ConfigService.get();
-    const filterTypes = cfg.notifyFilterTypes as EventType[];
-    const filtered = filterTypes.length > 0
-      ? events.filter(e => filterTypes.includes(e.type))
-      : events;
+    const filter = cfg.eventFilter;
+    // Apply event type filter
+    const hasTypes = filter.eventTypes.length > 0;
+    const hasActors = filter.actors.length > 0;
+    let filtered = events;
+    if (hasTypes) {
+      filtered = filtered.filter(e => (filter.eventTypes as EventType[]).includes(e.type));
+    }
+    if (hasActors) {
+      filtered = filtered.filter(e => filter.actors.includes(e.actor));
+    }
 
     if (filtered.length === 0) return;
 

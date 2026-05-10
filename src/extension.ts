@@ -216,46 +216,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
 
     vscode.commands.registerCommand('ghTracker.setNotifyFilter', async () => {
-      // Read current filter
       const cfg = ConfigService.get();
-      const currentFilter = cfg.notifyFilterTypes;
+      const current = cfg.eventFilter;
 
-      // Build quick-pick items for all event types
-      const ALL_EVENT_TYPES: EventType[] = [
-        'pr_opened', 'pr_closed', 'pr_merged', 'pr_review', 'pr_comment',
-        'issue_comment', 'pr_ready', 'push', 'workflow_failed', 'workflow_passed',
-        'review_requested', 'label_changed', 'branch_created', 'branch_deleted',
-        'release_published', 'issue_opened', 'issue_closed', 'fork', 'watch', 'unknown',
-      ];
-
-      const items = ALL_EVENT_TYPES.map(type => ({
-        label: type,
-        picked: currentFilter.length === 0 || currentFilter.includes(type),
-        description: currentFilter.length === 0 || currentFilter.includes(type) ? '(notifying)' : '(muted)',
-      }));
-
-      const selected = await vscode.window.showQuickPick(items, {
-        canPickMany: true,
-        placeHolder: 'Select event types to notify (deselect to mute)',
-        title: 'GH Tracker: Notification Filter',
-        ignoreFocusOut: true,
-      });
-
-      if (!selected) return; // user cancelled
-
-      // Save: selected items become the filter; if all selected = empty (notify all)
-      const selectedTypes = selected.map(s => s.label);
-      const allSelected = ALL_EVENT_TYPES.every(t => selectedTypes.includes(t));
-      const newFilter = allSelected ? [] : selectedTypes;
+      const pick = await vscode.window.showQuickPick([
+        { label: '$(filter) Filter by Event Type',      description: 'Show/hide specific event types', picked: true },
+        { label: '$(person) Filter by Actor',           description: 'Show events from specific users only' },
+        { label: '$(clear-all) Clear All Filters',      description: 'Remove all type and actor filters' },
+        { label: '$(info) Show Current Filter',         description: current.eventTypes.length + ' type(s), ' + current.actors.length + ' actor(s)' },
+      ], { placeHolder: 'Choose filter action', title: 'GH Tracker: Event Filter', ignoreFocusOut: true });
+      if (!pick) return;
 
       const section = vscode.workspace.getConfiguration(ConfigService.SECTION);
-      await section.update('notifyFilterTypes', newFilter, vscode.ConfigurationTarget.Global);
 
-      const count = newFilter.length;
-      if (count === 0) {
-        vscode.window.showInformationMessage('GH Tracker: Notifying all event types');
-      } else {
-        vscode.window.showInformationMessage(`GH Tracker: Notifying ${count} event type(s)`);
+      if (pick.label.includes('Clear All')) {
+        await section.update('eventFilter', {}, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage('GH Tracker: All filters cleared');
+        eventProvider?.refresh();
+        return;
+      }
+
+      if (pick.label.includes('Show Current')) {
+        const parts: string[] = [];
+        if (current.eventTypes.length > 0) parts.push('Types: ' + current.eventTypes.join(', '));
+        if (current.actors.length > 0) parts.push('Actors: ' + current.actors.join(', '));
+        if (parts.length === 0) parts.push('No filters active — showing all events');
+        vscode.window.showInformationMessage('GH Tracker Filter: ' + parts.join(' | '));
+        return;
+      }
+
+      if (pick.label.includes('Event Type')) {
+        const ALL_EVENT_TYPES: EventType[] = [
+          'pr_opened', 'pr_closed', 'pr_merged', 'pr_review', 'pr_comment',
+          'issue_comment', 'pr_ready', 'push', 'workflow_failed', 'workflow_passed',
+          'review_requested', 'label_changed', 'branch_created', 'branch_deleted',
+          'release_published', 'issue_opened', 'issue_closed', 'fork', 'watch', 'unknown',
+        ];
+        const items = ALL_EVENT_TYPES.map(type => ({
+          label: type,
+          picked: current.eventTypes.length === 0 || current.eventTypes.includes(type),
+          description: current.eventTypes.length === 0 || current.eventTypes.includes(type) ? '(shown)' : '(hidden)',
+        }));
+        const selected = await vscode.window.showQuickPick(items, {
+          canPickMany: true,
+          placeHolder: 'Select event types to show (deselect to hide)',
+          title: 'GH Tracker: Filter Event Types',
+          ignoreFocusOut: true,
+        });
+        if (!selected) return;
+        const selectedTypes = selected.map(s => s.label);
+        const allSelected = ALL_EVENT_TYPES.every(t => selectedTypes.includes(t));
+        await section.update('eventFilter', {
+          eventTypes: allSelected ? [] : selectedTypes,
+          actors: current.actors,
+        }, vscode.ConfigurationTarget.Global);
+        eventProvider?.refresh();
+        const count = allSelected ? 0 : selectedTypes.length;
+        if (count === 0) {
+          vscode.window.showInformationMessage('GH Tracker: Showing all event types');
+        } else {
+          vscode.window.showInformationMessage('GH Tracker: Showing ' + count + ' event type(s)');
+        }
+        return;
+      }
+
+      if (pick.label.includes('Actor')) {
+        const input = await vscode.window.showInputBox({
+          prompt: 'Enter GitHub usernames (comma-separated) to filter by',
+          placeHolder: 'e.g. octocat, torvalds',
+          value: current.actors.join(', '),
+          ignoreFocusOut: true,
+        });
+        if (input === undefined) return; // cancelled
+        const actors = input.split(',').map(a => a.trim()).filter(Boolean);
+        await section.update('eventFilter', {
+          eventTypes: current.eventTypes,
+          actors,
+        }, vscode.ConfigurationTarget.Global);
+        eventProvider?.refresh();
+        if (actors.length === 0) {
+          vscode.window.showInformationMessage('GH Tracker: Showing all actors');
+        } else {
+          vscode.window.showInformationMessage('GH Tracker: Filtering by ' + actors.length + ' actor(s)');
+        }
+        return;
       }
     }),
 
