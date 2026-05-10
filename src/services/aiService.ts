@@ -279,43 +279,42 @@ export class AIService implements vscode.Disposable {
       return toScore.slice(0, 20).map(e => ({ event: e, relevance: 'Keyword match' }));
     }
 
-    const BATCH_SIZE = 5;
+    // Send all candidates in a single LM request — 20 short event summaries
+    // fit comfortably within the token budget.  Previously this was done in 4
+    // sequential batches (5 each), wasting LM latency and Copilot weekly quota.
+    const lmCandidates = toScore.slice(0, 20);
+    const eventsJson = lmCandidates.map((e, idx) =>
+      '[' + idx + '] Type: ' + e.type + ' | Repo: ' + e.repo + ' | Actor: ' + e.actor + ' | Title: ' + e.title
+    ).join('\n');
+
+    const prompt = 'Given the search query: "' + query + '"\n\n' +
+      'Rate each event\'s relevance from 0 (completely irrelevant) to 10 (exactly what the user is looking for).\n' +
+      'Respond with ONLY a JSON array of objects: [{"index": 0, "score": 5, "reason": "concise reason"}, ...]\n' +
+      'Write the "reason" text in English.\n\nEvents:\n' + eventsJson;
+
     const results: Array<{ event: TrackedEvent; relevance: string }> = [];
+    try {
+      const cts = new vscode.CancellationTokenSource();
+      const req = await model.sendRequest(
+        [vscode.LanguageModelChatMessage.User(prompt)],
+        {},
+        cts.token
+      );
+      let result = '';
+      for await (const chunk of req.text) { result += chunk; }
 
-    for (let i = 0; i < Math.min(toScore.length, 20); i += BATCH_SIZE) {
-      const batch = toScore.slice(i, i + BATCH_SIZE);
-      const eventsJson = batch.map((e, idx) =>
-        '[' + idx + '] Type: ' + e.type + ' | Repo: ' + e.repo + ' | Actor: ' + e.actor + ' | Title: ' + e.title
-      ).join('\n');
-
-      const prompt = 'Given the search query: "' + query + '"\n\n' +
-        'Rate each event\'s relevance from 0 (completely irrelevant) to 10 (exactly what the user is looking for).\n' +
-        'Respond with ONLY a JSON array of objects: [{"index": 0, "score": 5, "reason": "concise reason"}, ...]\n' +
-        'Write the "reason" text in English.\n\nEvents:\n' + eventsJson;
-
-      try {
-        const cts = new vscode.CancellationTokenSource();
-        const req = await model.sendRequest(
-          [vscode.LanguageModelChatMessage.User(prompt)],
-          {},
-          cts.token
-        );
-        let result = '';
-        for await (const chunk of req.text) { result += chunk; }
-
-        const jsonMatch = result.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const scores = JSON.parse(jsonMatch[0]);
-          for (const s of scores) {
-            if (s.score >= 3 && batch[s.index]) {
-              results.push({ event: batch[s.index], relevance: s.reason });
-            }
+      const jsonMatch = result.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const scores = JSON.parse(jsonMatch[0]);
+        for (const s of scores) {
+          if (s.score >= 3 && lmCandidates[s.index]) {
+            results.push({ event: lmCandidates[s.index], relevance: s.reason });
           }
         }
-      } catch {
-        for (const e of batch) {
-          results.push({ event: e, relevance: 'Potential match' });
-        }
+      }
+    } catch {
+      for (const e of lmCandidates) {
+        results.push({ event: e, relevance: 'Potential match' });
       }
     }
 
@@ -430,7 +429,7 @@ export class AIService implements vscode.Disposable {
       '## SPECIFIC FEEDBACK\n- For each key file changed, call out specific lines or patterns.\n- Reference comments/reviews from other reviewers and whether you agree.\n\n' +
       '## RECOMMENDATION\n- APPROVE / REQUEST CHANGES / COMMENT with brief justification.\n\n' +
       'Be specific and actionable. Reference exact filenames and patterns. Skip style nitpicks.\n\n' +
-      'Write your response in English.\n\n---\nContext:\n' + fullContext;
+      'Write your response in English.';
 
     try {
       const cts = new vscode.CancellationTokenSource();

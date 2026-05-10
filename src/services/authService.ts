@@ -6,15 +6,20 @@ export class AuthService {
   /**
    * Main entry point. For github.com, tries the built-in OAuth provider first.
    * For GHE (any other host), falls back to a PAT prompt stored in SecretStorage.
+   *
+   * @param allowPrompt  When true (default), creates a new session if none exists,
+   *                     showing the OAuth sign-in dialog.  Pass false for background
+   *                     operations (e.g. polling restart) to avoid spurious dialogs.
    */
   static async getToken(
     context: vscode.ExtensionContext,
-    hostUrl: string
+    hostUrl: string,
+    allowPrompt: boolean = true
   ): Promise<string | undefined> {
     const isGithubDotCom = hostUrl.replace(/\/$/, '') === 'https://github.com';
 
     if (isGithubDotCom) {
-      return AuthService.getOAuthToken();
+      return AuthService.getOAuthToken(allowPrompt);
     } else {
       return AuthService.getPATToken(context, hostUrl);
     }
@@ -23,18 +28,19 @@ export class AuthService {
   /**
    * VSCode's built-in GitHub authentication. This opens the browser-based OAuth
    * flow automatically and returns a token with the requested scopes.
-   * 'createIfNone: true' means VSCode will prompt the user if no session exists.
    */
-  private static async getOAuthToken(): Promise<string | undefined> {
+  private static async getOAuthToken(allowPrompt: boolean): Promise<string | undefined> {
     try {
       const session = await vscode.authentication.getSession(
         'github',
         ['repo', 'read:org', 'workflow'],
-        { createIfNone: true }
+        allowPrompt ? { createIfNone: true } : { createIfNone: false, silent: true }
       );
-      return session.accessToken;
+      return session?.accessToken;
     } catch {
-      vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed.');
+      if (allowPrompt) {
+        vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed.');
+      }
       return undefined;
     }
   }

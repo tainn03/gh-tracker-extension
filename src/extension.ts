@@ -59,7 +59,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // ── 2. GitHubClient factory (re-created when settings change) ────────────────
   async function initClient(): Promise<GitHubClient | undefined> {
     const c = ConfigService.get();
-    const token = await AuthService.getToken(context, c.hostUrl);
+    // Use silent=false for background/polling re-auth so it doesn't pop a
+    // sign-in dialog on every settings change.  Explicit user actions like
+    // the setup panel use createIfNone: true by default.
+    const token = await AuthService.getToken(context, c.hostUrl, false);
     if (!token) {
       vscode.window.showErrorMessage('GH Tracker: Authentication failed. Run "GH Tracker: Open Setup".');
       return undefined;
@@ -97,6 +100,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     context.subscriptions.push(sub);
+    context.subscriptions.push(pollService);
     pollService.start();
     console.log(`GH Tracker: polling ${c.repositories.length} repos every ${c.pollIntervalSeconds}s`);
   }
