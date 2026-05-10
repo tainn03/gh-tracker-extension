@@ -5,6 +5,8 @@
     <source srcset="usecase.png" media="(prefers-color-scheme: light)">
     <img src="usecase.png" alt="GH Tracker in action" width="738">
   </picture>
+  <br>
+  <img src="demo.png" alt="GH Tracker demo" width="738">
 </p>
 
 The VSCode extension for real-time event tracking for GitHub / GHE repositories directly in VSCode. Polls repositories for PRs, pushes, workflow runs, and more — with AI-powered summaries, code reviews, and failure investigations.
