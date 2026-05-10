@@ -1,5 +1,4 @@
-# GitHub Enterprise Tracker
-
+<h1 align="center">GH Tracker</h1>
 <p align="center">
   <picture>
     <source srcset="usecase.png" media="(prefers-color-scheme: dark)">
@@ -8,7 +7,7 @@
   </picture>
 </p>
 
-Real-time event tracking for GitHub / GHE repositories directly in VSCode. Polls repositories for PRs, pushes, workflow runs, and more — with AI-powered summaries, code reviews, and failure investigations.
+The VSCode extension for real-time event tracking for GitHub / GHE repositories directly in VSCode. Polls repositories for PRs, pushes, workflow runs, and more — with AI-powered summaries, code reviews, and failure investigations.
 
 ## Features
 
@@ -28,23 +27,31 @@ Real-time event tracking for GitHub / GHE repositories directly in VSCode. Polls
 | **Persistent storage** | JSON file-backed event history with 30-day auto-cleanup |
 | **Open source** | MIT-licensed, contributions welcome |
 
-## Commands
+## How to install
 
-| Command | Description |
-|---------|-------------|
-| `GH Tracker: Open Setup` | Configure host, auth, repos, and preferences |
-| `GH Tracker: Refresh Now` | Force an immediate poll cycle |
-| `GH Tracker: Add Repository` | Add a repo in `org/repo` format |
-| `GH Tracker: Remove Repository` | Remove a tracked repo |
-| `GH Tracker: Mark All Read` | Mark all events in a repo as read |
-| `GH Tracker: Open Settings` | Open VSCode settings filtered to GH Tracker |
-| `GH Tracker: AI Summarize Event` | Generate a detailed summary of a selected event |
-| `GH Tracker: AI Review PR` | Run a full code review on a PR event |
-| `GH Tracker: AI Investigate Failure` | Analyze a failed workflow run |
-| `GH Tracker: AI Event Search` | Search events by natural language query |
-| `GH Tracker: Filter Notifications...` | Set event type and actor filters |
+**Prerequisites:** VSCode ≥ 1.90.
+
+### Install from VSIX (recommended)
+
+1. [Download the latest `.vsix` from Releases](https://github.com/ngtai/gh-tracker/releases) or build it yourself (`npm run package`).
+2. Open VSCode → Extensions view (`Ctrl+Shift+X`).
+3. Click the `…` (More Actions) menu → **Install from VSIX...**.
+4. Select the `.vsix` file.
+5. The extension activates automatically. Open the GH Tracker setup panel from the activity bar or via `Ctrl+Shift+P` → `GH Tracker: Open Setup`.
+
+### Build from source
+
+```bash
+git clone https://github.com/ngtai/gh-tracker.git
+cd gh-tracker
+npm install
+npm run package
+# Output: gh-tracker-<version>.vsix in the project root
+```
 
 ## Development
+
+**Requirements:** Node.js ≥ 20 (Node 18 is EOL and incompatible with npm's undici dependency).
 
 1. `npm install`
 2. `npm run watch`
@@ -52,7 +59,7 @@ Real-time event tracking for GitHub / GHE repositories directly in VSCode. Polls
 
 ```bash
 # Type-check
-npx tsc --noEmit
+npm run typecheck
 
 # Lint
 npm run lint
