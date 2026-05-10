@@ -160,6 +160,12 @@
           "default": "https://github.com",
           "description": "GitHub or GitHub Enterprise host URL (e.g. https://ghe.corp.co.jp)"
         },
+        "ghTracker.authMethod": {
+          "type": "string",
+          "enum": ["oauth", "pat"],
+          "default": "oauth",
+          "description": "Authentication method: OAuth (built-in GitHub login via VSCode) or PAT (personal access token)"
+        },
         "ghTracker.repositories": {
           "type": "array",
           "items": {

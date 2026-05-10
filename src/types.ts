@@ -57,6 +57,7 @@ export interface ExtensionConfig {
   aiEnabled: boolean;
   maxEventsShown: number;
   openIn: 'vscode' | 'external';
+  authMethod: 'oauth' | 'pat';
   /** @deprecated Use eventFilter.eventTypes instead */
   notifyFilterTypes: string[];
   eventFilter: EventFilter;

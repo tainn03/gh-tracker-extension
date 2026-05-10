@@ -4,25 +4,28 @@ export class AuthService {
   private static readonly SECRET_KEY = 'ghTracker.token';
 
   /**
-   * Main entry point. For github.com, tries the built-in OAuth provider first.
-   * For GHE (any other host), falls back to a PAT prompt stored in SecretStorage.
+   * Main entry point. Uses the configured authMethod setting to decide
+   * between OAuth (built-in VSCode GitHub login) and PAT (user-supplied
+   * personal access token stored in SecretStorage).
    *
-   * @param allowPrompt  When true (default), creates a new session if none exists,
-   *                     showing the OAuth sign-in dialog.  Pass false for background
-   *                     operations (e.g. polling restart) to avoid spurious dialogs.
+   * Unlike the previous URL-based auto-detection, this relies entirely on
+   * the user's explicit choice in settings — OAuth works for any host,
+   * PAT works for any host.
+   *
+   * @param allowPrompt  When true (default), creates a new OAuth session
+   *                     if none exists, showing the sign-in dialog. Pass
+   *                     false for background operations to avoid dialogs.
    */
   static async getToken(
     context: vscode.ExtensionContext,
     hostUrl: string,
+    authMethod: 'oauth' | 'pat',
     allowPrompt: boolean = true
   ): Promise<string | undefined> {
-    const isGithubDotCom = hostUrl.replace(/\/$/, '') === 'https://github.com';
-
-    if (isGithubDotCom) {
-      return AuthService.getOAuthToken(allowPrompt);
-    } else {
-      return AuthService.getPATToken(context, hostUrl);
+    if (authMethod === 'pat') {
+      return AuthService.getPATToken(context, hostUrl, allowPrompt);
     }
+    return AuthService.getOAuthToken(allowPrompt);
   }
 
   /**
@@ -46,23 +49,26 @@ export class AuthService {
   }
 
   /**
-   * For GHE: check SecretStorage first (so the user doesn't re-enter every session),
-   * then prompt if not found.
+   * Read a PAT from SecretStorage (keychain-backed). Prompts the user
+   * only when `allowPrompt` is true and no cached token exists.
    */
   private static async getPATToken(
     context: vscode.ExtensionContext,
-    hostUrl: string
+    hostUrl: string,
+    allowPrompt: boolean
   ): Promise<string | undefined> {
     // Try cached token first
     const cached = await context.secrets.get(AuthService.SECRET_KEY);
     if (cached) { return cached; }
 
+    if (!allowPrompt) { return undefined; }
+
     // Prompt user for PAT
     const pat = await vscode.window.showInputBox({
       title: `GH Tracker — Personal Access Token for ${hostUrl}`,
       prompt: 'Enter a token with repo, read:org, and workflow scopes',
-      password: true,          // ← renders as •••• in the input box
-      ignoreFocusOut: true,    // ← don't dismiss when user clicks away
+      password: true,
+      ignoreFocusOut: true,
     });
 
     if (pat) {

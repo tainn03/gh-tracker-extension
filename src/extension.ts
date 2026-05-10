@@ -41,13 +41,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Tree providers accept undefined store — they render empty when storage
   // failed to init (e.g. unwritable globalStorageUri in restricted env).
   const cfg = ConfigService.get();
-  if (store) {
-    repoProvider = new RepoTreeProvider(store, cfg.repositories);
-    eventProvider = new EventTreeProvider(store, cfg.maxEventsShown);
-  } else {
-    repoProvider = new RepoTreeProvider(null as any, cfg.repositories);
-    eventProvider = new EventTreeProvider(null as any, cfg.maxEventsShown);
-  }
+  repoProvider = new RepoTreeProvider(store, cfg.repositories);
+  eventProvider = new EventTreeProvider(store, cfg.maxEventsShown);
   searchProvider = new SearchTreeProvider();
 
   context.subscriptions.push(
@@ -62,7 +57,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Use silent=false for background/polling re-auth so it doesn't pop a
     // sign-in dialog on every settings change.  Explicit user actions like
     // the setup panel use createIfNone: true by default.
-    const token = await AuthService.getToken(context, c.hostUrl, false);
+    const token = await AuthService.getToken(context, c.hostUrl, c.authMethod, false);
     if (!token) {
       vscode.window.showErrorMessage('GH Tracker: Authentication failed. Run "GH Tracker: Open Setup".');
       return undefined;
@@ -189,6 +184,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand('ghTracker.aiSummarize', async (item) => {
       if (!item?.event || !client || !aiService) { return; }
+      // Enrich the event with full API detail before summarizing.
+      // This populates event.rawData so the AI has richer context (PR
+      // diffs, commit messages, workflow logs) than the basic event payload.
+      try { await client.enrichEvent(item.event, item.event.repo); } catch { /* best-effort */ }
       await aiService.summarizeEvent(item.event, client);
     }),
 
@@ -318,9 +317,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
 
-    // Restart polling when settings change
-    ConfigService.onChange(() => {
-      restart();
+    // Restart polling when relevant settings change; just refresh trees for
+    // display-only changes (eventFilter, notificationLevel, etc.).
+    ConfigService.onChange((e) => {
+      if (e.affectsConfiguration('ghTracker.hostUrl') ||
+          e.affectsConfiguration('ghTracker.repositories') ||
+          e.affectsConfiguration('ghTracker.pollIntervalSeconds')) {
+        restart();
+      } else {
+        repoProvider?.refresh();
+        eventProvider?.refresh();
+      }
     })
   );
 

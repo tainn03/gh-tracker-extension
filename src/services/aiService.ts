@@ -225,8 +225,9 @@ export class AIService implements vscode.Disposable {
     }
 
     const logLines = logTail.split('\n');
+    const logDisplay = logLines.join('\n');
 
-    output.appendLine('Log tail:\n' + logLines + '\n');
+    output.appendLine('Log tail:\n' + logDisplay + '\n');
 
     const prompt = 'A CI/CD pipeline failed. Analyze these log lines and provide:\n\n' +
       '1. ROOT CAUSE: What specifically caused the failure (one sentence)\n' +
@@ -235,7 +236,7 @@ export class AIService implements vscode.Disposable {
       '4. PREVENTION: How to avoid this in the future\n\n' +
       'Focus on the FIRST error or non-zero exit code in the logs — ignore informational footnotes (deprecation warnings, runner cleanup).\n\n' +
       'Format with clear headers. Be specific — reference actual error messages from the logs.\n\n' +
-      'Write your response in English.\n\nLog tail:\n' + logLines;
+      'Write your response in English.\n\nLog tail:\n' + logDisplay;
 
     try {
       const cts = new vscode.CancellationTokenSource();

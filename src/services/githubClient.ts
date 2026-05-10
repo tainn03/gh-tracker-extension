@@ -13,6 +13,8 @@ export class GitHubClient {
   // etag cache: repo → last ETag header value
   // When GitHub returns 304 Not Modified, we skip processing entirely.
   private etagCache = new Map<string, string>();
+  // Separate ETag cache for workflow runs (different API endpoint, separate rate-limit cost)
+  private workflowEtagCache = new Map<string, string>();
 
   constructor(token: string, hostUrl: string) {
     const isGHE = !hostUrl.includes('github.com');
@@ -423,15 +425,21 @@ export class GitHubClient {
    */
   async getWorkflowRuns(nameWithOwner: string): Promise<any[]> {
     const [owner, repo] = nameWithOwner.split('/');
+    const cachedEtag = this.workflowEtagCache.get(nameWithOwner);
     try {
-      const { data } = await this.octokit.actions.listWorkflowRunsForRepo({
+      const response = await this.octokit.actions.listWorkflowRunsForRepo({
         owner,
         repo,
         status: 'completed',
         per_page: 10,
+        headers: cachedEtag ? { 'If-None-Match': cachedEtag } : {},
       });
-      return data.workflow_runs ?? [];
-    } catch {
+      const newEtag = response.headers['etag'];
+      if (newEtag) { this.workflowEtagCache.set(nameWithOwner, newEtag); }
+      return response.data.workflow_runs ?? [];
+    } catch (err: any) {
+      // 304 = nothing changed since last poll — this is normal, not an error
+      if (err.status === 304) { return []; }
       return [];
     }
   }

@@ -6,7 +6,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<RepoItem> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   constructor(
-    private store: EventStore,
+    private store: EventStore | undefined,
     private repos: string[]
   ) {}
 
@@ -21,9 +21,15 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<RepoItem> {
   }
 
   getChildren(): RepoItem[] {
+    const store = this.store;
+    if (!store) {
+      const errorItem = new vscode.TreeItem('Storage unavailable', vscode.TreeItemCollapsibleState.None);
+      errorItem.contextValue = 'error';
+      return [errorItem as unknown as RepoItem];
+    }
     return this.repos.map(repo => {
-      const unread    = this.store.getUnreadCount(repo);
-      const hasFailure = this.store.hasUnreadFailure(repo);
+      const unread    = store.getUnreadCount(repo);
+      const hasFailure = store.hasUnreadFailure(repo);
       return new RepoItem(repo, unread, hasFailure);
     });
   }

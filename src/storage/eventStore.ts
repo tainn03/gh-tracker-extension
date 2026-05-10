@@ -88,6 +88,17 @@ export class EventStore {
     return [...this.events];
   }
 
+  /**
+   * Given a list of events, return only those not already stored (by id).
+   * Used to detect genuinely new events after insertMany deduplication
+   * has run, for example to avoid re-notifying on workflow runs that
+   * bypass the "since last event" filter in getNewEvents.
+   */
+  filterNew(events: TrackedEvent[]): TrackedEvent[] {
+    const existing = new Set(this.events.map(e => e.id));
+    return events.filter(e => !existing.has(e.id));
+  }
+
   /** Get the most recent N events for a repo. */
   getEventsForRepo(repo: string, limit = 30): TrackedEvent[] {
     const results: TrackedEvent[] = [];

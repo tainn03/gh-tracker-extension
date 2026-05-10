@@ -34,7 +34,7 @@ export class SetupPanel {
     // Listen for messages sent from the webview JavaScript
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.command === 'save') {
-        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, openIn } = msg.data;
+        const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, openIn, authMethod } = msg.data;
 
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
@@ -45,6 +45,7 @@ export class SetupPanel {
           c.update('aiEnabled',           aiEnabled,           globalTarget),
           c.update('pollIntervalSeconds', pollIntervalSeconds, globalTarget),
           c.update('openIn',              openIn,              globalTarget),
+          c.update('authMethod',          authMethod,          globalTarget),
         ]);
 
         vscode.window.showInformationMessage('GH Tracker: Settings saved!');
@@ -54,7 +55,7 @@ export class SetupPanel {
 
       if (msg.command === 'testConnection') {
         try {
-          const token = await AuthService.getToken(context, msg.hostUrl);
+          const token = await AuthService.getToken(context, msg.hostUrl, msg.authMethod);
           if (!token) { throw new Error('No token'); }
           const client = clientFactory(token, msg.hostUrl);
           const user = await client.validateConnection();
@@ -112,6 +113,14 @@ export class SetupPanel {
 
   <label for="hostUrl">Host URL</label>
   <input id="hostUrl" value="${cfg.hostUrl}" placeholder="https://github.com" />
+
+  <label for="authMethod">Authentication method</label>
+  <select id="authMethod">
+    <option value="oauth" ${cfg.authMethod === 'oauth' ? 'selected' : ''}>GitHub OAuth (built-in)</option>
+    <option value="pat"   ${cfg.authMethod === 'pat'   ? 'selected' : ''}>Personal Access Token</option>
+  </select>
+  <p class="sub" style="margin-top:2px">OAuth uses VSCode's built-in GitHub login. PAT requires a token with repo, read:org, and workflow scopes.</p>
+
   <button class="secondary" onclick="testConn()" style="margin-top:8px;padding:5px 12px">Test connection</button>
   <div class="status" id="connStatus"></div>
 
@@ -146,14 +155,16 @@ export class SetupPanel {
           pollIntervalSeconds: parseInt(document.getElementById('pollInterval').value, 10),
           aiEnabled:           document.getElementById('aiEnabled').checked,
           openIn:              document.getElementById('openIn').value,
+          authMethod:          document.getElementById('authMethod').value,
         }
       });
     }
 
     function testConn() {
       const hostUrl = document.getElementById('hostUrl').value.trim();
+      const authMethod = document.getElementById('authMethod').value;
       document.getElementById('connStatus').textContent = 'Testing\u2026';
-      vscode.postMessage({ command: 'testConnection', hostUrl });
+      vscode.postMessage({ command: 'testConnection', hostUrl, authMethod });
     }
 
     window.addEventListener('message', e => {

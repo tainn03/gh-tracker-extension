@@ -7,7 +7,7 @@ Real-time event tracking for GitHub / GHE repositories directly in VSCode.
 - Track multiple repositories (GitHub.com or GHE).
 - Real-time polling and notifications.
 - AI-powered PR reviews and summaries using Copilot LM API.
-- Local SQLite storage for event history.
+- Local JSON file storage for event history.
 
 ## Development
 

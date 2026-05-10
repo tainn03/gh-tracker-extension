@@ -17,6 +17,7 @@ export class ConfigService {
       aiEnabled:           cfg.get<boolean>('aiEnabled', false),
       maxEventsShown:      cfg.get<number>('maxEventsShown', 10),
       openIn:              cfg.get<'vscode'|'external'>('openIn', 'vscode'),
+      authMethod:          cfg.get<'oauth'|'pat'>('authMethod', 'oauth'),
       notifyFilterTypes:   oldTypes,
       eventFilter: {
         eventTypes: eventFilter.eventTypes ?? oldTypes,
@@ -45,10 +46,10 @@ export class ConfigService {
   }
 
   /** Returns a disposable you can push to context.subscriptions */
-  static onChange(handler: () => void): vscode.Disposable {
+  static onChange(handler: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {
     return vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration(ConfigService.SECTION)) {
-        handler();
+        handler(e);
       }
     });
   }

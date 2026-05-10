@@ -9,7 +9,7 @@ export class EventTreeProvider implements vscode.TreeDataProvider<EventItem> {
 
   private currentRepo: string | undefined;
 
-  constructor(private store: EventStore, private maxEvents: number) { }
+  constructor(private store: EventStore | undefined, private maxEvents: number) { }
 
   showRepo(repo: string): void {
     this.currentRepo = repo;
@@ -23,7 +23,7 @@ export class EventTreeProvider implements vscode.TreeDataProvider<EventItem> {
   getTreeItem(item: EventItem): vscode.TreeItem { return item; }
 
   getChildren(): EventItem[] {
-    if (!this.currentRepo) { return []; }
+    if (!this.currentRepo || !this.store) { return []; }
     const events = this.store.getEventsForRepo(this.currentRepo, this.maxEvents);
 
     // Apply active filter (event types + actors)
