@@ -72,7 +72,10 @@ export class AuthService {
       return githubSession?.accessToken;
     } catch {
       if (allowPrompt) {
-        vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed. For GitHub Enterprise, try PAT authentication if OAuth is unavailable.');
+        const hint = isDotComHost
+          ? 'GH Tracker: GitHub authentication failed.'
+          : 'GH Tracker: GitHub Enterprise authentication failed. Try PAT authentication if OAuth is unavailable.';
+        vscode.window.showErrorMessage(hint);
       }
       return undefined;
     }
