@@ -5,6 +5,9 @@ import type { GitHubClient } from '../services/githubClient';
 
 export class SetupPanel {
   private static panel: vscode.WebviewPanel | undefined;
+  private static normalizeHostUrl(hostUrl: string): string {
+    return hostUrl.trim().replace(/\/$/, '');
+  }
 
   static show(
     context: vscode.ExtensionContext,
@@ -35,15 +38,26 @@ export class SetupPanel {
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.command === 'save') {
         const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, openIn, authMethod } = msg.data;
+        const normalizedHostUrl = SetupPanel.normalizeHostUrl(hostUrl ?? '');
+        const safePollIntervalSeconds = Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds >= 30
+          ? pollIntervalSeconds
+          : 30;
+
+        try {
+          new URL(normalizedHostUrl);
+        } catch {
+          vscode.window.showErrorMessage('GH Tracker: Host URL must be a valid absolute URL (e.g. https://github.com).');
+          return;
+        }
 
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
         const c = vscode.workspace.getConfiguration(ConfigService.SECTION);
         await Promise.all([
-          c.update('hostUrl',             hostUrl,             globalTarget),
+          c.update('hostUrl',             normalizedHostUrl,   globalTarget),
           c.update('repositories',        repositories,        globalTarget),
           c.update('aiEnabled',           aiEnabled,           globalTarget),
-          c.update('pollIntervalSeconds', pollIntervalSeconds, globalTarget),
+          c.update('pollIntervalSeconds', safePollIntervalSeconds, globalTarget),
           c.update('openIn',              openIn,              globalTarget),
           c.update('authMethod',          authMethod,          globalTarget),
         ]);
@@ -55,9 +69,11 @@ export class SetupPanel {
 
       if (msg.command === 'testConnection') {
         try {
-          const token = await AuthService.getToken(context, msg.hostUrl, msg.authMethod);
+          const hostUrl = SetupPanel.normalizeHostUrl(msg.hostUrl ?? '');
+          new URL(hostUrl);
+          const token = await AuthService.getToken(context, hostUrl, msg.authMethod);
           if (!token) { throw new Error('No token'); }
-          const client = clientFactory(token, msg.hostUrl);
+          const client = clientFactory(token, hostUrl);
           const user = await client.validateConnection();
           panel.webview.postMessage({ command: 'connectionResult', success: true, user });
         } catch (err: any) {
@@ -119,7 +135,7 @@ export class SetupPanel {
     <option value="oauth" ${cfg.authMethod === 'oauth' ? 'selected' : ''}>GitHub OAuth (built-in)</option>
     <option value="pat"   ${cfg.authMethod === 'pat'   ? 'selected' : ''}>Personal Access Token</option>
   </select>
-  <p class="sub" style="margin-top:2px">OAuth uses VSCode's built-in GitHub login. PAT requires a token with repo, read:org, and workflow scopes.</p>
+  <p class="sub" style="margin-top:2px">OAuth uses VSCode's built-in GitHub login (GitHub.com + GitHub Enterprise). PAT requires a token with repo, read:org, and workflow scopes.</p>
 
   <button class="secondary" onclick="testConn()" style="margin-top:8px;padding:5px 12px">Test connection</button>
   <div class="status" id="connStatus"></div>
@@ -145,12 +161,13 @@ export class SetupPanel {
 
   <script>
     const vscode = acquireVsCodeApi();
+    const normalizeHostUrl = value => value.trim().replace(/\/$/, '');
 
     function save() {
       vscode.postMessage({
         command: 'save',
         data: {
-          hostUrl:             document.getElementById('hostUrl').value.trim(),
+          hostUrl:             normalizeHostUrl(document.getElementById('hostUrl').value),
           repositories:        document.getElementById('repos').value.split('\n').map(s => s.trim()).filter(Boolean),
           pollIntervalSeconds: parseInt(document.getElementById('pollInterval').value, 10),
           aiEnabled:           document.getElementById('aiEnabled').checked,
@@ -161,7 +178,7 @@ export class SetupPanel {
     }
 
     function testConn() {
-      const hostUrl = document.getElementById('hostUrl').value.trim();
+      const hostUrl = normalizeHostUrl(document.getElementById('hostUrl').value);
       const authMethod = document.getElementById('authMethod').value;
       document.getElementById('connStatus').textContent = 'Testing\u2026';
       vscode.postMessage({ command: 'testConnection', hostUrl, authMethod });

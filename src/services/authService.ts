@@ -25,24 +25,40 @@ export class AuthService {
     if (authMethod === 'pat') {
       return AuthService.getPATToken(context, hostUrl, allowPrompt);
     }
-    return AuthService.getOAuthToken(allowPrompt);
+    return AuthService.getOAuthToken(hostUrl, allowPrompt);
   }
 
   /**
    * VSCode's built-in GitHub authentication. This opens the browser-based OAuth
    * flow automatically and returns a token with the requested scopes.
    */
-  private static async getOAuthToken(allowPrompt: boolean): Promise<string | undefined> {
+  private static async getOAuthToken(hostUrl: string, allowPrompt: boolean): Promise<string | undefined> {
+    const authOptions = allowPrompt
+      ? { createIfNone: true }
+      : { createIfNone: false, silent: true };
+    const normalizedHost = hostUrl.trim().replace(/\/$/, '');
+    const isDotComHost = /^https:\/\/(www\.)?github\.com$/i.test(normalizedHost);
     try {
-      const session = await vscode.authentication.getSession(
+      if (!isDotComHost) {
+        const enterpriseSession = await vscode.authentication.getSession(
+          'github-enterprise',
+          ['repo', 'read:org', 'workflow'],
+          { ...authOptions, enterpriseUri: normalizedHost } as unknown as vscode.AuthenticationGetSessionOptions
+        );
+        if (enterpriseSession?.accessToken) {
+          return enterpriseSession.accessToken;
+        }
+      }
+
+      const githubSession = await vscode.authentication.getSession(
         'github',
         ['repo', 'read:org', 'workflow'],
-        allowPrompt ? { createIfNone: true } : { createIfNone: false, silent: true }
+        authOptions
       );
-      return session?.accessToken;
+      return githubSession?.accessToken;
     } catch {
       if (allowPrompt) {
-        vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed.');
+        vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed. For GitHub Enterprise, try PAT authentication if OAuth is unavailable.');
       }
       return undefined;
     }
