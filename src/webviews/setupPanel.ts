@@ -46,7 +46,7 @@ export class SetupPanel {
         try {
           new URL(normalizedHostUrl);
         } catch {
-          vscode.window.showErrorMessage('GH Tracker: Host URL must be a valid absolute URL (e.g. https://github.com).');
+          vscode.window.showErrorMessage(`GH Tracker: Invalid host URL "${normalizedHostUrl}". Use an absolute URL (e.g. https://github.com).`);
           return;
         }
 
