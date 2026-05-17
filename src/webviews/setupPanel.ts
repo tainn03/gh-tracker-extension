@@ -5,6 +5,7 @@ import type { GitHubClient } from '../services/githubClient';
 
 export class SetupPanel {
   private static panel: vscode.WebviewPanel | undefined;
+  private static readonly MIN_POLL_INTERVAL_SECONDS = 30;
   private static normalizeHostUrl(hostUrl: string): string {
     return hostUrl.trim().replace(/\/$/, '');
   }
@@ -39,9 +40,9 @@ export class SetupPanel {
       if (msg.command === 'save') {
         const { hostUrl, repositories, aiEnabled, pollIntervalSeconds, openIn, authMethod } = msg.data;
         const normalizedHostUrl = SetupPanel.normalizeHostUrl(hostUrl ?? '');
-        const safePollIntervalSeconds = Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds >= 30
+        const safePollIntervalSeconds = Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds >= SetupPanel.MIN_POLL_INTERVAL_SECONDS
           ? pollIntervalSeconds
-          : 30;
+          : SetupPanel.MIN_POLL_INTERVAL_SECONDS;
 
         try {
           new URL(normalizedHostUrl);
@@ -144,7 +145,7 @@ export class SetupPanel {
   <textarea id="repos">${cfg.repositories.join('\n')}</textarea>
 
   <label for="pollInterval">Poll interval (seconds)</label>
-  <input id="pollInterval" type="number" min="30" value="${cfg.pollIntervalSeconds}" />
+  <input id="pollInterval" type="number" min="${SetupPanel.MIN_POLL_INTERVAL_SECONDS}" value="${cfg.pollIntervalSeconds}" />
 
   <label for="openIn">Open events in</label>
   <select id="openIn">

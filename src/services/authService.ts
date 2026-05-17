@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
 
+type EnterpriseAuthSessionOptions = vscode.AuthenticationGetSessionOptions & {
+  enterpriseUri: string;
+};
+
 export class AuthService {
   private static readonly SECRET_KEY = 'ghTracker.token';
 
@@ -45,12 +49,11 @@ export class AuthService {
         const enterpriseSession = await vscode.authentication.getSession(
           'github-enterprise',
           ['repo', 'read:org', 'workflow'],
-          { ...authOptions, enterpriseUri: normalizedHost } as unknown as vscode.AuthenticationGetSessionOptions
+          ({ ...authOptions, enterpriseUri: normalizedHost } as unknown as EnterpriseAuthSessionOptions)
         );
         if (enterpriseSession?.accessToken) {
           return enterpriseSession.accessToken;
         }
-        console.debug(`GH Tracker: No OAuth session returned from github-enterprise provider for ${normalizedHost}. Falling back to github provider.`);
       }
 
       const githubSession = await vscode.authentication.getSession(
