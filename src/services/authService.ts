@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
 
+type EnterpriseAuthSessionOptions = vscode.AuthenticationGetSessionOptions & {
+  enterpriseUri: string;
+};
+
 export class AuthService {
   private static readonly SECRET_KEY = 'ghTracker.token';
 
@@ -25,24 +29,53 @@ export class AuthService {
     if (authMethod === 'pat') {
       return AuthService.getPATToken(context, hostUrl, allowPrompt);
     }
-    return AuthService.getOAuthToken(allowPrompt);
+    return AuthService.getOAuthToken(hostUrl, allowPrompt);
   }
 
   /**
    * VSCode's built-in GitHub authentication. This opens the browser-based OAuth
    * flow automatically and returns a token with the requested scopes.
    */
-  private static async getOAuthToken(allowPrompt: boolean): Promise<string | undefined> {
+  private static async getOAuthToken(hostUrl: string, allowPrompt: boolean): Promise<string | undefined> {
+    const authOptions = allowPrompt
+      ? { createIfNone: true }
+      : { createIfNone: false, silent: true };
+    const normalizedHost = hostUrl.trim().replace(/\/$/, '');
+    let isDotComHost = false;
     try {
-      const session = await vscode.authentication.getSession(
+      const parsedHost = new URL(normalizedHost);
+      const hostname = parsedHost.hostname.toLowerCase();
+      isDotComHost = parsedHost.protocol === 'https:' && (hostname === 'github.com' || hostname === 'www.github.com');
+    } catch {
+      isDotComHost = false;
+    }
+    try {
+      if (!isDotComHost) {
+        // `enterpriseUri` is supported by the GitHub Enterprise auth provider at runtime,
+        // but it's not currently declared in vscode.AuthenticationGetSessionOptions typings.
+        const enterpriseOptions = { ...authOptions, enterpriseUri: normalizedHost } as EnterpriseAuthSessionOptions;
+        const enterpriseSession = await vscode.authentication.getSession(
+          'github-enterprise',
+          ['repo', 'read:org', 'workflow'],
+          enterpriseOptions
+        );
+        if (enterpriseSession?.accessToken) {
+          return enterpriseSession.accessToken;
+        }
+      }
+
+      const githubSession = await vscode.authentication.getSession(
         'github',
         ['repo', 'read:org', 'workflow'],
-        allowPrompt ? { createIfNone: true } : { createIfNone: false, silent: true }
+        authOptions
       );
-      return session?.accessToken;
+      return githubSession?.accessToken;
     } catch {
       if (allowPrompt) {
-        vscode.window.showErrorMessage('GH Tracker: GitHub authentication failed.');
+        const hint = isDotComHost
+          ? 'GH Tracker: GitHub authentication failed.'
+          : 'GH Tracker: GitHub Enterprise authentication failed. Try PAT authentication if OAuth is unavailable.';
+        vscode.window.showErrorMessage(hint);
       }
       return undefined;
     }
