@@ -41,15 +41,24 @@ export class AuthService {
       ? { createIfNone: true }
       : { createIfNone: false, silent: true };
     const normalizedHost = hostUrl.trim().replace(/\/$/, '');
-    const isDotComHost = /^https:\/\/(www\.)?github\.com$/i.test(normalizedHost);
+    let isDotComHost = false;
+    try {
+      const parsedHost = new URL(normalizedHost);
+      const hostname = parsedHost.hostname.toLowerCase();
+      isDotComHost = parsedHost.protocol === 'https:' && (hostname === 'github.com' || hostname === 'www.github.com');
+    } catch {
+      isDotComHost = false;
+    }
     try {
       if (!isDotComHost) {
         // `enterpriseUri` is supported by the GitHub Enterprise auth provider at runtime,
         // but it's not currently declared in vscode.AuthenticationGetSessionOptions typings.
+        const enterpriseOptions: vscode.AuthenticationGetSessionOptions = { ...authOptions };
+        (enterpriseOptions as { enterpriseUri: string }).enterpriseUri = normalizedHost;
         const enterpriseSession = await vscode.authentication.getSession(
           'github-enterprise',
           ['repo', 'read:org', 'workflow'],
-          ({ ...authOptions, enterpriseUri: normalizedHost } as unknown as EnterpriseAuthSessionOptions)
+          enterpriseOptions as EnterpriseAuthSessionOptions
         );
         if (enterpriseSession?.accessToken) {
           return enterpriseSession.accessToken;

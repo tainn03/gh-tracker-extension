@@ -71,7 +71,11 @@ export class SetupPanel {
       if (msg.command === 'testConnection') {
         try {
           const hostUrl = SetupPanel.normalizeHostUrl(msg.hostUrl ?? '');
-          new URL(hostUrl);
+          try {
+            new URL(hostUrl);
+          } catch {
+            throw new Error(`Invalid host URL "${hostUrl}". Use an absolute URL (e.g. https://github.com).`);
+          }
           const token = await AuthService.getToken(context, hostUrl, msg.authMethod);
           if (!token) { throw new Error('No token'); }
           const client = clientFactory(token, hostUrl);
