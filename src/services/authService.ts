@@ -53,12 +53,11 @@ export class AuthService {
       if (!isDotComHost) {
         // `enterpriseUri` is supported by the GitHub Enterprise auth provider at runtime,
         // but it's not currently declared in vscode.AuthenticationGetSessionOptions typings.
-        const enterpriseOptions: vscode.AuthenticationGetSessionOptions = { ...authOptions };
-        (enterpriseOptions as { enterpriseUri: string }).enterpriseUri = normalizedHost;
+        const enterpriseOptions = { ...authOptions, enterpriseUri: normalizedHost } as EnterpriseAuthSessionOptions;
         const enterpriseSession = await vscode.authentication.getSession(
           'github-enterprise',
           ['repo', 'read:org', 'workflow'],
-          enterpriseOptions as EnterpriseAuthSessionOptions
+          enterpriseOptions
         );
         if (enterpriseSession?.accessToken) {
           return enterpriseSession.accessToken;

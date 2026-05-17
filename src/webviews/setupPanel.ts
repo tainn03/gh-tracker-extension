@@ -51,6 +51,10 @@ export class SetupPanel {
           return;
         }
 
+        if (safePollIntervalSeconds !== pollIntervalSeconds) {
+          vscode.window.showWarningMessage(`GH Tracker: Poll interval must be at least ${SetupPanel.MIN_POLL_INTERVAL_SECONDS} seconds. Using ${safePollIntervalSeconds}.`);
+        }
+
         // Persist each setting
         const globalTarget = vscode.ConfigurationTarget.Global;
         const c = vscode.workspace.getConfiguration(ConfigService.SECTION);
